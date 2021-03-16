@@ -1,0 +1,9 @@
+setup.py
+src/spsolve/__init__.py
+src/spsolve/database.py
+src/spsolve/plotter.py
+src/spsolve/solver.py
+src/spsolve.egg-info/PKG-INFO
+src/spsolve.egg-info/SOURCES.txt
+src/spsolve.egg-info/dependency_links.txt
+src/spsolve.egg-info/top_level.txt
