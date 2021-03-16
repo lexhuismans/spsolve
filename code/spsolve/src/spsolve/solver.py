@@ -231,22 +231,22 @@ class StackedLayers:
             predictor = np.dot(inner_product, N_elec)
             return predictor
         
-        def solve_newt(phi):
+        def pred_phi(phi):
             return np.dot(self.pois_matrix, phi) - q_e*(pred_charge(phi) - self.doping)
         
         error = 1
-        tol = 1e-4
-        max_iter = 1000
+        tol = 1e-10
+        max_iter = 100
         i = 0
         while error > tol and i < max_iter:
             rho_old = self.rho
-            self.phi = optimize.newton(solve_newt, self.phi, fprime = jac)
+            self.phi = optimize.newton(pred_phi, self.phi, fprime = jac)
             self.solve_schrodinger()
             self.solve_charge()
 
             error = np.abs(np.dot(rho_old, self.rho))
-            print(error)
             i = i + 1
+            
         
 #-----------------------Non Class Code---------------------------
     

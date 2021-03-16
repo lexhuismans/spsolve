@@ -15,7 +15,7 @@ m_eff = 1.08 # effective mass of electron
 PERMETTIVITY = 0.055263494 # q_e/(V*nm) 
 q_e = 1 # elementary charge
 
-def plot_distributions(grid, n_e, band, psi, energies, title='image.png', n_e_fit = None, L = 20):
+def plot_distributions(grid, n_e, band, psi, energies, title=None, n_e_fit = None, L = 20):
     fig_pois, ax_pois = plt.subplots(3)
     
     # CHARGE DISTRIBUTION #
@@ -37,12 +37,12 @@ def plot_distributions(grid, n_e, band, psi, energies, title='image.png', n_e_fi
     
     # WAVEFUNCTION#
     #print('Normalize numerical: ', np.sum(psi[:,0]**2*grid[1]))
-    ax_pois[2].plot(grid, psi[:,0], label='$E_0$ = {:f}'.format(energies[0])) 
+    ax_pois[2].plot(grid, psi[:,0], label='$E_0$ = {:f} eV'.format(energies[0])) 
                     
     if not isinstance(n_e_fit, type(None)):
         fit = math.sqrt(2/L)*np.sin(math.pi/L*grid)
         print('Normalize fit: ', np.sum(fit**2)*grid[1])
-        ax_pois[2].plot(grid[1:-1], fit[1:-1], label='Analytical $E_1$ eV = {:f}'.format(math.pi**2*h_bar**2/(2*m_eff*20*2)+.799))
+        ax_pois[2].plot(grid[1:-1], fit[1:-1], label='Analytical $E_1$ = {:f} eV'.format(math.pi**2*h_bar**2/(2*m_eff*20*2)+.799))
     else:
         number_of_wavefunctions = 3
         for n in np.arange(number_of_wavefunctions-1)+1:
@@ -55,7 +55,8 @@ def plot_distributions(grid, n_e, band, psi, energies, title='image.png', n_e_fi
     ax_pois[2].set_ylabel('$\psi$')
 
     fig_pois.tight_layout()
-    plt.savefig(title)
+    if type(title) not None:
+        plt.savefig(title)
     plt.show()
     
 def plot_conduction_band(grid, band, title='figures/conduction_band.png'):
