@@ -91,4 +91,5 @@ alloyproperty = {
         'VSATN':3e5,# Saturation Velocity of Electrons
         'VSATP':6e5 , # Saturation Velocity of Holes
         'AVb_E':-2.1#Average Valence Band Energy or the absolute energy level
-    }}
+    }
+}
