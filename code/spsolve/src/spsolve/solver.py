@@ -1,5 +1,6 @@
 import math
 from collections import namedtuple
+
 from . import database
 
 import kwant

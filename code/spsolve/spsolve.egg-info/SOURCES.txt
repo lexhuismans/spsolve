@@ -1,0 +1,5 @@
+setup.py
+spsolve.egg-info/PKG-INFO
+spsolve.egg-info/SOURCES.txt
+spsolve.egg-info/dependency_links.txt
+spsolve.egg-info/top_level.txt
