@@ -1,5 +1,6 @@
 import math
 from collections import namedtuple
+import database
 
 import kwant
 import numpy as np
@@ -7,13 +8,12 @@ from scipy import optimize
 from scipy.linalg import eigh, lu_factor, lu_solve
 
 # Physical constants
-k_b = 8.617333262145e-5  # eV/K
-epsilon_0 = 0.055263494  # q_e/(V*nm)
-m_e = 9.10938 * 10 ** -31  # kg
+k_b = database.k_b
+epsilon_0 = database.epsilon_0  # q_e/(V*nm)
+m_e = database.m_e  # kg
 
-h_bar = 0.276042828 
-m_eff = 1.08  # m_e
-q_e = 1  # elementary charge
+h_bar = database.h_bar
+q_e = database.q_e  # elementary charge
 
 Material = namedtuple("Material", ["doping", "m_eff", "epsilon", "band_offset", "L"])
 
@@ -83,6 +83,7 @@ class StackedLayers:
         self.band = self.band_offset  # Conduction band
 
         self.DOS = self.m_eff / (math.pi * h_bar ** 2)  # Density of States
+        print(1/math.pi/h_bar**2)
 
         self.make_pois_matrix()
         self.make_system()
@@ -271,7 +272,9 @@ class StackedLayers:
             error = np.abs(np.dot(rho_old, self.rho))
             i = i + 1
 
-
+    def get_m_eff(material):
+        if material in database.materialproperty:
+            return materialpropertie[material]
 # -----------------------Non Class Code---------------------------
 
 
