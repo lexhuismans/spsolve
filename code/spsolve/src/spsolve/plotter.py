@@ -6,7 +6,7 @@ import numpy as np
 from scipy.optimize import minimize as scipy_minimize
 from scipy.optimize import root as scipy_root
 
-import solver
+from . import solver
 
 # Physical constants
 h_bar = 0.276042828  # eV s

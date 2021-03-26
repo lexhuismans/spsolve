@@ -83,7 +83,6 @@ class StackedLayers:
         self.band = self.band_offset  # Conduction band
 
         self.DOS = self.m_eff / (math.pi * h_bar ** 2)  # Density of States
-        print(1/math.pi/h_bar**2)
 
         self.make_pois_matrix()
         self.make_system()
@@ -178,27 +177,19 @@ class StackedLayers:
         # --------------------BOUNDARIES----------------------
         if self.bound_left[0]:
             # Dirichlet
-            adjusted_rho[0] += (
-                self.layers[0].epsilon * self.bound_left[1] / self.dl ** 2
-            )
+            adjusted_rho[0] += (self.layers[0].epsilon * self.bound_left[1] / self.dl ** 2)
         else:
             # Neumann
-            adjusted_rho[0] += (
-                -2 * self.bound_left[1] * self.layers[0].epsilon / self.dl
-            )
+            adjusted_rho[0] += (-2 * self.bound_left[1] * self.layers[0].epsilon / self.dl)
 
         if self.bound_right[0]:
             # Dirichlet
-            adjusted_rho[-1] += (
-                self.layers[-1].epsilon * self.bound_right[1] / self.dl ** 2
-            )
+            adjusted_rho[-1] += (self.layers[-1].epsilon * self.bound_right[1] / self.dl ** 2)
         else:
             # Neumann
-            adjusted_rho[-1] += (
-                2 * self.bound_right[1] * self.layers[-1].epsilon / self.dl
-            )
-        # ---------------------SOLVE--------------------------
+            adjusted_rho[-1] += (2 * self.bound_right[1] * self.layers[-1].epsilon / self.dl)
 
+        # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
         return phi
 
@@ -210,9 +201,7 @@ class StackedLayers:
 
         energies, transverse_modes = eigh(ham)
 
-        transverse_modes = transverse_modes / math.sqrt(
-            self.dl
-        )  # Every column is a wavefunction
+        transverse_modes = transverse_modes / math.sqrt(self.dl)  # Every column is a wavefunction
 
         return transverse_modes, energies
 
@@ -226,7 +215,6 @@ class StackedLayers:
 
             # Compute error
             diff = phi_old - phi
-            print('iter')
             return diff
 
         band = self.solve_poisson(np.zeros(self.N))
