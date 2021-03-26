@@ -37,17 +37,18 @@ def test_solve_schrodinger(infinite_well):
     N = infinite_well.N
     psi = np.zeros((N, N))
     energies = np.zeros(N)
-    V_0 = 0
-    phi = np.ones(N)*V_0
 
-    for n in np.arange(N) + 1:
-        psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
-        energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * infinite_well.m_eff[0] * L ** 2) - V_0
+    for V_0 in np.linspace(-2, 2, 20):
+        phi = np.ones(N)*V_0
 
-    psi_test, energies_test = infinite_well.solve_schrodinger(phi)
+        for n in np.arange(N) + 1:
+            psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
+            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * infinite_well.m_eff[0] * L ** 2) - V_0
 
-    assert np.all(np.abs(psi[:,0:10]) == pytest.approx(np.abs(psi_test[:,0:10]), 0.01))
-    assert np.all(energies[0:10] == pytest.approx(energies_test[0:10], 0.01))
+        psi_test, energies_test = infinite_well.solve_schrodinger(phi)
+
+        assert np.all(np.abs(psi[:,0:10]) == pytest.approx(np.abs(psi_test[:,0:10]), 0.01))
+        assert np.all(energies[0:10] == pytest.approx(energies_test[0:10], 0.1))
 
 def test_solve_poisson(infinite_well):
     pass
