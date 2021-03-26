@@ -193,10 +193,11 @@ class StackedLayers:
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
         return phi
 
-    def solve_schrodinger(self, band):
+    def solve_schrodinger(self, phi):
         """
         Gives the wavefunctions for a given potential distribution.
         """
+        band = -q_e*phi + self.band_offset
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
 
         energies, transverse_modes = eigh(ham)
@@ -209,7 +210,7 @@ class StackedLayers:
         def self_consistent(phi):
             phi_old = phi.copy()
 
-            psi, energies = self.solve_schrodinger(phi + self.band_offset)
+            psi, energies = self.solve_schrodinger(phi)
             rho = self.solve_charge(psi)
             phi = self.solve_poisson(rho)
 
@@ -223,7 +224,7 @@ class StackedLayers:
             self_consistent, band, method="anderson"#, options=dict(maxiter=3)
         )
         self.phi = optim_result.x
-        self.band = q_e*self.phi+self.band_offset
+        self.band = -q_e*self.phi+self.band_offset
         self.transverse_modes, self.energies = self.solve_schrodinger(self.band)
         self.rho = self.solve_charge(self.transverse_modes)
 
