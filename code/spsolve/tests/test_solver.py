@@ -8,7 +8,7 @@ from spsolve import database, solver
 k_b = database.k_b
 h_bar = database.h_bar
 epsilon_0 = database.epsilon_0
-
+q_e = database.q_e
 
 @pytest.fixture
 def infinite_well():
@@ -68,4 +68,7 @@ def test_solve_charge(infinite_well):
         psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
         energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * m_eff * L ** 2) - V_0
 
-    pass
+    inner_product = psi**2
+    rho = -q_e * m_eff/(math.pi * h_bar**2) * np.dot(inner_product, -energies*(energies < 0))
+
+    assert np.all(rho == infinite_well.solve_charge(psi, energies))
