@@ -1,7 +1,6 @@
 import math
 
 import numpy as np
-import matplotlib.pyplot as plt
 import pytest
 from spsolve import database, solver
 
@@ -9,6 +8,7 @@ k_b = database.k_b
 h_bar = database.h_bar
 epsilon_0 = database.epsilon_0
 q_e = database.q_e
+
 
 @pytest.fixture
 def infinite_well():
@@ -47,13 +47,18 @@ def test_solve_schrodinger(infinite_well):
 
         psi_test, energies_test = infinite_well.solve_schrodinger(phi)
 
-        assert np.all(np.abs(psi[:,0:10]) == pytest.approx(np.abs(psi_test[:,0:10]), 0.01))
+        assert np.all(np.abs(psi[:, 0:10]) == pytest.approx(np.abs(psi_test[:, 0:10]), 0.01))
         assert np.all(energies[0:10] == pytest.approx(energies_test[0:10], 0.1))
+
 
 def test_solve_poisson(infinite_well):
     pass
 
+
 def test_solve_charge(infinite_well):
+    """
+    Test solve_charge() at T=0.
+    """
     grid = infinite_well.grid
     L = infinite_well.L
     N = infinite_well.N
@@ -61,14 +66,13 @@ def test_solve_charge(infinite_well):
     psi = np.zeros((N, N))
     energies = np.zeros(N)
     rho = np.zeros(N)
-    V_0 = -0.05
-    phi = np.ones(N)*V_0 # Potential
 
-    for n in np.arange(N) + 1:
-        psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
-        energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * m_eff * L ** 2) - V_0
+    for V_0 in np.linspace(-1, 1, 20):
+        for n in np.arange(N) + 1:
+            psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
+            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * m_eff * L ** 2) - V_0
 
-    inner_product = psi**2
-    rho = -q_e * m_eff/(math.pi * h_bar**2) * np.dot(inner_product, -energies*(energies < 0))
+        inner_product = psi**2
+        rho = -q_e * m_eff/(math.pi * h_bar**2) * np.dot(inner_product, -energies*(energies < 0))
 
-    assert np.all(rho == infinite_well.solve_charge(psi, energies))
+        assert np.all(rho == pytest.approx(infinite_well.solve_charge(psi, energies), 0.1))
