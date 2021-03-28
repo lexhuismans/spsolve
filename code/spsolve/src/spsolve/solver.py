@@ -131,6 +131,7 @@ class StackedLayers:
         lat = kwant.lattice.chain(self.dl)
         syst = kwant.Builder()
         # ONSITE
+
         def onsite(site, pot):
             i = site.tag
             t = h_bar ** 2 / (2 * self.dl ** 2) * (1 / m_eff_imh[i] + 1 / m_eff_iph[i])
@@ -157,12 +158,12 @@ class StackedLayers:
 
         self.syst = syst.finalized()
 
-    def solve_charge(self, transverse_modes):
+    def solve_charge(self, transverse_modes, energies):
         """
         Solve for the charge distribution.
         """
         inner_product = transverse_modes ** 2
-        N_elec = self.DOS * fermi_dirac_int(0, self.energies, self.T)
+        N_elec = self.DOS * fermi_dirac_int(0, energies, self.T)
 
         n_e = np.dot(inner_product, N_elec)
         rho = -q_e * n_e + q_e * self.doping
@@ -177,17 +178,25 @@ class StackedLayers:
         # --------------------BOUNDARIES----------------------
         if self.bound_left[0]:
             # Dirichlet
-            adjusted_rho[0] += (self.layers[0].epsilon * self.bound_left[1] / self.dl ** 2)
+            adjusted_rho[0] += (
+                self.layers[0].epsilon * self.bound_left[1] / self.dl ** 2
+            )
         else:
             # Neumann
-            adjusted_rho[0] += (-2 * self.bound_left[1] * self.layers[0].epsilon / self.dl)
+            adjusted_rho[0] += (
+                -2 * self.bound_left[1] * self.layers[0].epsilon / self.dl
+            )
 
         if self.bound_right[0]:
             # Dirichlet
-            adjusted_rho[-1] += (self.layers[-1].epsilon * self.bound_right[1] / self.dl ** 2)
+            adjusted_rho[-1] += (
+                self.layers[-1].epsilon * self.bound_right[1] / self.dl ** 2
+            )
         else:
             # Neumann
-            adjusted_rho[-1] += (2 * self.bound_right[1] * self.layers[-1].epsilon / self.dl)
+            adjusted_rho[-1] += (
+                2 * self.bound_right[1] * self.layers[-1].epsilon / self.dl
+            )
 
         # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
@@ -197,12 +206,14 @@ class StackedLayers:
         """
         Gives the wavefunctions for a given potential distribution.
         """
-        band = -q_e*phi + self.band_offset
+        band = -q_e * phi + self.band_offset
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
 
         energies, transverse_modes = eigh(ham)
 
-        transverse_modes = transverse_modes / math.sqrt(self.dl)  # Every column is a wavefunction
+        transverse_modes = transverse_modes / math.sqrt(
+            self.dl
+        )  # Every column is a wavefunction
 
         return transverse_modes, energies
 
@@ -211,7 +222,7 @@ class StackedLayers:
             phi_old = phi.copy()
 
             psi, energies = self.solve_schrodinger(phi)
-            rho = self.solve_charge(psi)
+            rho = self.solve_charge(psi, energies)
             phi = self.solve_poisson(rho)
 
             # Compute error
@@ -221,16 +232,14 @@ class StackedLayers:
         band = self.solve_poisson(np.zeros(self.N))
 
         optim_result = optimize.root(
-            self_consistent, band, method="anderson"#, options=dict(maxiter=3)
+            self_consistent, band, method="anderson"  # , options=dict(maxiter=3)
         )
         self.phi = optim_result.x
-        self.band = -q_e*self.phi+self.band_offset
-        self.transverse_modes, self.energies = self.solve_schrodinger(self.band)
-        self.rho = self.solve_charge(self.transverse_modes)
+        self.band = -q_e * self.phi + self.band_offset
+        self.transverse_modes, self.energies = self.solve_schrodinger(self.phi)
+        self.rho = self.solve_charge(self.transverse_modes, self.energies)
 
-    def get_m_eff(material):
-        if material in database.materialproperty:
-            return materialpropertie[material]
+
 # -----------------------Non Class Code---------------------------
 
 
