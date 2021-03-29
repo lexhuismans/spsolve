@@ -2,36 +2,6 @@
 Database
 """
 
-
-def get_m_eff(material, x=None):
-    if material in materialproperty:
-        m_eff = materialproperty[material]["m_e"]
-    elif material in alloyproperty:
-        assert type(x) is not None, "Provide alloy fraction"
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-    else:
-        assert False, "Material {} not in database".format(material)
-    return m_eff
-
-
-def get_band_gap(material, x=None):
-    if material in materialproperty:
-        band_gap = materialproperty[material]["Eg"]
-    elif material in alloyproperty:
-        assert type(x) is not None, "Provide alloy fraction"
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-        material1_Eg = materialproperty[material1]["Eg"]
-        material2_Eg = materialproperty[material2]["Eg"]
-        band_gap = (
-            (1 - x) * material1_Eg
-            + x * material2_Eg
-            - x * (1 - x) * alloyproperty[material]["bowing_param"]
-        )
-    return band_gap
-
-
 # PHYSICAL CONSTANTS
 k_b = 8.617333262145e-5  # eV/K
 epsilon_0 = 0.055263494  # q_e/(V*nm)
@@ -40,6 +10,55 @@ m_e = 9.10938 * 10 ** -31  # kg
 h_bar = 0.276042828
 m_eff = 1.08  # m_e
 q_e = 1  # elementary charge
+
+
+def get_m_e(material, x=None):
+    if material in materialproperty:
+        m_e = materialproperty[material]["m_e"]
+    elif material in alloyproperty:
+        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
+        material1 = alloyproperty[material]["material1"]
+        material2 = alloyproperty[material]["material2"]
+        material1_m_e = materialproperty[material1]["m_e"]
+        material2_m_e = materialproperty[material2]["m_e"]
+        m_e = (x * material1_m_e + (1 - x) * material2_m_e)
+    else:
+        assert False, "Material {} not in database".format(material)
+    return m_e
+
+
+def get_dielectric_constant(material, x=None):
+    if material in materialproperty:
+        eps = materialproperty[material]["epsilonStatic"]
+    elif material in alloyproperty:
+        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
+        material1 = alloyproperty[material]["material1"]
+        material2 = alloyproperty[material]["material2"]
+        material1_eps = materialproperty[material1]["epsilonStatic"]
+        material2_eps = materialproperty[material2]["epsilonStatic"]
+        eps = (x * material1_eps + (1 - x) * material2_eps)
+    else:
+        assert False, "Material {} not in database".format(material)
+    return eps
+
+
+def get_band_gap(material, x=None):
+    if material in materialproperty:
+        band_gap = materialproperty[material]["Eg"]
+    elif material in alloyproperty:
+        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
+        material1 = alloyproperty[material]["material1"]
+        material2 = alloyproperty[material]["material2"]
+        material1_Eg = materialproperty[material1]["Eg"]
+        material2_Eg = materialproperty[material2]["Eg"]
+        band_gap = (
+            x * material1_Eg
+            + (1 - x) * material2_Eg
+            - x * (1 - x) * alloyproperty[material]["bowing_param"]
+        )
+    else:
+        assert False, "Material {} not in database".format(material)
+    return band_gap
 
 # MATERIAL PROPERTIES
 materialproperty = {
@@ -52,6 +71,8 @@ materialproperty = {
         "Ep": 28.8,  # (eV) k.p matrix element (used for non-parabolicity calculation (Vurgaftman2001)
         "F": -1.94,  # Kane parameter (used for non-parabolicity calculation (Vurgaftman2001)
         "band_offset": 0.65,  # conduction band/valence band offset ratio for GaAs - AlGaAs heterojunctions
+        "alpha": .605,  # Varschni parameter alpha
+        "beta": 204,  # Varschni parameter beta
         "m_e_alpha": 5.3782e18,  # conduction band non-parabolicity variable for linear relation (Nelson approach)
         # Valence band constants
         "delta": 0.28,  # (eV) Spin split-off energy gap
@@ -86,6 +107,8 @@ materialproperty = {
         "Ep": 21.1,
         "F": -0.48,
         "band_offset": 0.53,
+        "alpha": .605,
+        "beta": 204,
         "m_e_alpha": 0.0,
         "GA1": 3.45,
         "GA2": 0.68,
