@@ -15,7 +15,7 @@ m_e = database.m_e  # kg
 h_bar = database.h_bar
 q_e = database.q_e  # elementary charge
 
-Material = namedtuple("Material", ["doping", "m_eff", "epsilon", "band_offset", "L"])
+Material = namedtuple('Material', ['material', 'L', 'x', 'doping'], defaults=[0, 0])
 
 
 def fermi_dirac(E_f, E, T):
@@ -62,17 +62,19 @@ class StackedLayers:
 
         # PROPERTIES
         self.epsilon = np.zeros(self.N)
-        self.m_eff = np.zeros(self.N)
+        self.m_e = np.zeros(self.N)
         self.doping = np.zeros(self.N)
         self.band_offset = np.zeros(self.N)
         for i in range(self.N_layers):
             where = np.argwhere(
                 (self.grid >= self.L_hj[i]) * (self.grid <= self.L_hj[i + 1])
             )
-            self.epsilon[where] = self.layers[i].epsilon
-            self.m_eff[where] = self.layers[i].m_eff
+            material = self.layers[i].material
+            x = self.layers[i].x
+            self.epsilon[where] = database.get_dielectric_constant(material, x)
+            self.m_e[where] = database.get_m_e(material, x)
+            self.band_offset[where] = database.get_band_gap(material, x)
             self.doping[where] = self.layers[i].doping
-            self.band_offset[where] = self.layers[i].band_offset
         self.band_offset = self.band_offset - self.band_offset[0]
 
         self.rho = q_e * self.doping  # Charge distribution
@@ -82,7 +84,7 @@ class StackedLayers:
         self.energies = np.zeros(self.N)  # Energies
         self.band = self.band_offset  # Conduction band
 
-        self.DOS = self.m_eff / (math.pi * h_bar ** 2)  # Density of States
+        self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
 
         self.make_pois_matrix()
         self.make_system()
@@ -123,10 +125,10 @@ class StackedLayers:
         template = kwant.continuum.discretize('k_x * A(x) * k_x + V(x)')
         print(template)
         """
-        m_eff_full = np.concatenate(([self.m_eff[0]], self.m_eff, [self.m_eff[-1]]))
-        m_eff_half = np.convolve(m_eff_full, [0.5, 0.5], "valid")
-        m_eff_imh = m_eff_half[0:-1]
-        m_eff_iph = m_eff_half[1::]
+        m_e_full = np.concatenate(([self.m_e[0]], self.m_e, [self.m_e[-1]]))
+        m_e_half = np.convolve(m_e_full, [0.5, 0.5], "valid")
+        m_e_imh = m_e_half[0:-1]
+        m_e_iph = m_e_half[1::]
 
         lat = kwant.lattice.chain(self.dl)
         syst = kwant.Builder()
@@ -134,24 +136,24 @@ class StackedLayers:
 
         def onsite(site, pot):
             i = site.tag
-            t = h_bar ** 2 / (2 * self.dl ** 2) * (1 / m_eff_imh[i] + 1 / m_eff_iph[i])
+            t = h_bar ** 2 / (2 * self.dl ** 2) * (1 / m_e_imh[i] + 1 / m_e_iph[i])
             return t + pot[i]
 
         syst[(lat(x) for x in range(int(self.N)))] = onsite
         # HOPPING
         for i in np.arange(self.N - 1) + 1:
-            t = h_bar ** 2 / (2 * m_eff_imh[i] * self.dl ** 2)
+            t = h_bar ** 2 / (2 * m_e_imh[i] * self.dl ** 2)
             syst[lat(i), lat(i - 1)] = -t
 
         # ATTACH LEADS
         left_lead = kwant.Builder(kwant.TranslationalSymmetry((-self.dl,)))
-        t = h_bar ** 2 / (2 * m_eff_imh[0] * self.dl ** 2)
+        t = h_bar ** 2 / (2 * m_e_imh[0] * self.dl ** 2)
         left_lead[lat(0)] = 2 * t
         left_lead[lat.neighbors()] = -t
         syst.attach_lead(left_lead)
 
         right_lead = kwant.Builder(kwant.TranslationalSymmetry((self.dl,)))
-        t = h_bar ** 2 / (2 * m_eff_iph[-1] * self.dl ** 2)
+        t = h_bar ** 2 / (2 * m_e_iph[-1] * self.dl ** 2)
         right_lead[lat(0)] = 2 * t
         right_lead[lat.neighbors()] = -t
         syst.attach_lead(right_lead)
