@@ -13,11 +13,11 @@ q_e = database.q_e
 @pytest.fixture
 def infinite_well():
     doping = 0
-    m_eff = 0.067
+    m_e = 0.067
     dielec_const = 12.9
     band_offset = 0.8
     L = 20
-    material = solver.Material(doping, m_eff, dielec_const * epsilon_0, band_offset, L)
+    material = solver.Material(doping, m_e, dielec_const * epsilon_0, band_offset, L)
 
     T = 0
     N = 400
@@ -32,6 +32,9 @@ def test_fermi_dirac():
 
 
 def test_solve_schrodinger(infinite_well):
+    """
+    test solve_schrodinger() at T=0.
+    """
     grid = infinite_well.grid
     L = infinite_well.L
     N = infinite_well.N
@@ -43,7 +46,7 @@ def test_solve_schrodinger(infinite_well):
 
         for n in np.arange(N) + 1:
             psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
-            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * infinite_well.m_eff[0] * L ** 2) - V_0
+            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * infinite_well.m_e[0] * L ** 2) - V_0
 
         psi_test, energies_test = infinite_well.solve_schrodinger(phi)
 
@@ -62,7 +65,7 @@ def test_solve_charge(infinite_well):
     grid = infinite_well.grid
     L = infinite_well.L
     N = infinite_well.N
-    m_eff = infinite_well.m_eff[0]
+    m_e = infinite_well.m_e[0]
     psi = np.zeros((N, N))
     energies = np.zeros(N)
     rho = np.zeros(N)
@@ -70,9 +73,9 @@ def test_solve_charge(infinite_well):
     for V_0 in np.linspace(-1, 1, 20):
         for n in np.arange(N) + 1:
             psi[:, n - 1] = math.sqrt(2 / L) * np.sin(grid * n * math.pi / L)
-            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * m_eff * L ** 2) - V_0
+            energies[n - 1] = (n * math.pi * h_bar) ** 2 / (2 * m_e * L ** 2) - V_0
 
         inner_product = psi**2
-        rho = -q_e * m_eff/(math.pi * h_bar**2) * np.dot(inner_product, -energies*(energies < 0))
+        rho = -q_e * m_e/(math.pi * h_bar**2) * np.dot(inner_product, -energies*(energies < 0))
 
         assert np.all(rho == pytest.approx(infinite_well.solve_charge(psi, energies), 0.1))
