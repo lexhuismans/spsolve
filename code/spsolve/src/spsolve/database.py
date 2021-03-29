@@ -54,8 +54,27 @@ def get_band_gap(material, x=0):
             - x * (1 - x) * alloyproperty[material]["bowing_param"]
         )
     else:
-        assert False, "Material {} not in database".format(material)
+        assert False, "Material {} not in database.".format(material)
     return band_gap
+
+
+def get_band_offset(material, x=0):
+    if material in materialproperty:
+        bo = materialproperty[material]['band_offset']
+        Eg = get_band_gap(material, x)
+        band_offset = bo*Eg
+    elif material in alloyproperty:
+        material1 = alloyproperty[material]['material1']
+        material2 = alloyproperty[material]['material2']
+        bo1 = materialproperty[material1]['band_offset']
+        bo2 = materialproperty[material2]['band_offset']
+        bo = x * bo1 + (1 - x) * bo2
+        Eg = get_band_gap(material, x)
+        band_offset = bo*Eg
+    else:
+        assert False, "Material {} not in database.".format(material)
+    return band_offset
+
 
 # MATERIAL PROPERTIES
 materialproperty = {
@@ -64,7 +83,7 @@ materialproperty = {
         "m_hh": 0.45,  # heavy hole band effective mass
         "m_lh": 0.087,  # light hole band effective mass
         "epsilonStatic": 12.90,  # dielectric constant
-        "Eg": 1.4223,  # 1.42 # (ev) band gap
+        "Eg": 1.4223,  # 1.42 (ev) band gap
         "Ep": 28.8,  # (eV) k.p matrix element (used for non-parabolicity calculation (Vurgaftman2001)
         "F": -1.94,  # Kane parameter (used for non-parabolicity calculation (Vurgaftman2001)
         "band_offset": 0.65,  # conduction band/valence band offset ratio for GaAs - AlGaAs heterojunctions
