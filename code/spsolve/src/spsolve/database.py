@@ -12,11 +12,10 @@ m_eff = 1.08  # m_e
 q_e = 1  # elementary charge
 
 
-def get_m_e(material, x=None):
+def get_m_e(material, x=0):
     if material in materialproperty:
         m_e = materialproperty[material]["m_e"]
     elif material in alloyproperty:
-        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
         material1 = alloyproperty[material]["material1"]
         material2 = alloyproperty[material]["material2"]
         material1_m_e = materialproperty[material1]["m_e"]
@@ -27,11 +26,10 @@ def get_m_e(material, x=None):
     return m_e
 
 
-def get_dielectric_constant(material, x=None):
+def get_dielectric_constant(material, x=0):
     if material in materialproperty:
         eps = materialproperty[material]["epsilonStatic"]
     elif material in alloyproperty:
-        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
         material1 = alloyproperty[material]["material1"]
         material2 = alloyproperty[material]["material2"]
         material1_eps = materialproperty[material1]["epsilonStatic"]
@@ -42,11 +40,10 @@ def get_dielectric_constant(material, x=None):
     return eps
 
 
-def get_band_gap(material, x=None):
+def get_band_gap(material, x=0):
     if material in materialproperty:
         band_gap = materialproperty[material]["Eg"]
     elif material in alloyproperty:
-        assert type(x) is not None, "Provide alloy fraction of {}.".format(material)
         material1 = alloyproperty[material]["material1"]
         material2 = alloyproperty[material]["material2"]
         material1_Eg = materialproperty[material1]["Eg"]
