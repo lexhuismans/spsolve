@@ -15,7 +15,7 @@ m_e = database.m_e  # kg
 h_bar = database.h_bar
 q_e = database.q_e  # elementary charge
 
-Material = namedtuple('Material', ['material', 'L', 'x', 'doping'], defaults=[0, 0])
+Material = namedtuple("Material", ["material", "L", "x", "doping"], defaults=[0, 0])
 
 
 def fermi_dirac(E_f, E, T):
@@ -48,8 +48,6 @@ class StackedLayers:
         self.N = N
 
         self.N_layers = len(layers)
-        self.bound_left = bound_left
-        self.bound_right = bound_right
 
         self.L = 0  # Total length (nm)
         self.L_hj = np.array([0])
@@ -73,7 +71,7 @@ class StackedLayers:
             x = self.layers[i].x
             self.epsilon[where] = database.get_dielectric_constant(material, x)
             self.m_e[where] = database.get_m_e(material, x)
-            self.band_offset[where] = database.get_band_gap(material, x)
+            self.band_offset[where] = database.get_band_offset(material, x)
             self.doping[where] = self.layers[i].doping
         self.band_offset = self.band_offset - self.band_offset[0]
 
@@ -86,6 +84,9 @@ class StackedLayers:
 
         self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
 
+        self.pois_matrix = np.zeros((N, N))
+        self.bound_left = bound_left
+        self.bound_right = bound_right
         self.make_pois_matrix()
         self.make_system()
 
@@ -106,18 +107,17 @@ class StackedLayers:
 
         prefac = -1 / self.dl ** 2
 
-        pois_matrix = prefac * (
+        self.pois_matrix = prefac * (
             np.diag(km1[1::], k=-1) + np.diag(k, k=0) + np.diag(kp1[0:-1], k=1)
         )
 
         if self.bound_left[0] is False:
-            pois_matrix[0, 1] += prefac * self.layers[0].epsilon
+            self.pois_matrix[0, 1] += prefac * self.epsilon[0]
         if self.bound_right[0] is False:
-            pois_matrix[-1, -2] += prefac * self.layers[-1].epsilon
+            self.pois_matrix[-1, -2] += prefac * self.epsilon[-1]
 
-        lu, piv = lu_factor(pois_matrix)
+        lu, piv = lu_factor(self.pois_matrix)
         self.pois_matrix_lu_piv = (lu, piv)
-        self.pois_matrix = pois_matrix
 
     def make_system(self):
         """
@@ -180,25 +180,17 @@ class StackedLayers:
         # --------------------BOUNDARIES----------------------
         if self.bound_left[0]:
             # Dirichlet
-            adjusted_rho[0] += (
-                self.layers[0].epsilon * self.bound_left[1] / self.dl ** 2
-            )
+            adjusted_rho[0] += self.epsilon[0] * self.bound_left[1] / self.dl ** 2
         else:
             # Neumann
-            adjusted_rho[0] += (
-                -2 * self.bound_left[1] * self.layers[0].epsilon / self.dl
-            )
+            adjusted_rho[0] += -2 * self.bound_left[1] * self.epsilon[0] / self.dl
 
         if self.bound_right[0]:
             # Dirichlet
-            adjusted_rho[-1] += (
-                self.layers[-1].epsilon * self.bound_right[1] / self.dl ** 2
-            )
+            adjusted_rho[-1] += self.epsilon[-1] * self.bound_right[1] / self.dl ** 2
         else:
             # Neumann
-            adjusted_rho[-1] += (
-                2 * self.bound_right[1] * self.layers[-1].epsilon / self.dl
-            )
+            adjusted_rho[-1] += 2 * self.bound_right[1] * self.epsilon[-1] / self.dl
 
         # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
@@ -240,6 +232,34 @@ class StackedLayers:
         self.band = -q_e * self.phi + self.band_offset
         self.transverse_modes, self.energies = self.solve_schrodinger(self.phi)
         self.rho = self.solve_charge(self.transverse_modes, self.energies)
+
+    @property
+    def bound_left(self):
+        return self.__bound_left
+
+    @bound_left.setter
+    def bound_left(self, bound):
+        if bound[0] is False:
+            prefac = -1 / self.dl ** 2
+            self.pois_matrix[0, 1] += prefac * self.epsilon[0]
+
+        lu, piv = lu_factor(self.pois_matrix)
+        self.pois_matrix_lu_piv = (lu, piv)
+        self.__bound_left = bound
+
+    @property
+    def bound_right(self):
+        return self.__bound_right
+
+    @bound_right.setter
+    def bound_right(self, bound):
+        if bound[0] is False:
+            prefac = -1 / self.dl ** 2
+            self.pois_matrix[-1, -2] += prefac * self.epsilon[-1]
+
+        lu, piv = lu_factor(self.pois_matrix)
+        self.pois_matrix_lu_piv = (lu, piv)
+        self.__bound_right = bound
 
 
 # -----------------------Non Class Code---------------------------
