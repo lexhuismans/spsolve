@@ -194,13 +194,13 @@ class StackedLayers:
 
         # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
-        return phi
+        band = -q_e * phi + self.band_offset
+        return band
 
-    def solve_schrodinger(self, phi):
+    def solve_schrodinger(self, band):
         """
         Gives the wavefunctions for a given potential distribution.
         """
-        band = -q_e * phi + self.band_offset
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
 
         energies, transverse_modes = eigh(ham)
@@ -212,15 +212,15 @@ class StackedLayers:
         return transverse_modes, energies
 
     def solve_optimize(self):
-        def self_consistent(phi):
-            phi_old = phi.copy()
+        def self_consistent(band):
+            band_old = band.copy()
 
-            psi, energies = self.solve_schrodinger(phi)
+            psi, energies = self.solve_schrodinger(band)
             rho = self.solve_charge(psi, energies)
-            phi = self.solve_poisson(rho)
+            band = self.solve_poisson(rho)
 
             # Compute error
-            diff = phi_old - phi
+            diff = band_old - band
             return diff
 
         band = self.solve_poisson(np.zeros(self.N))
@@ -228,10 +228,11 @@ class StackedLayers:
         optim_result = optimize.root(
             self_consistent, band, method="anderson"  # , options=dict(maxiter=3)
         )
-        self.phi = optim_result.x
-        self.band = -q_e * self.phi + self.band_offset
-        self.transverse_modes, self.energies = self.solve_schrodinger(self.phi)
-        self.rho = self.solve_charge(self.transverse_modes, self.energies)
+        band = optim_result.x
+        transverse_modes, energies = self.solve_schrodinger(band)
+        rho = self.solve_charge(transverse_modes, energies)
+
+        return band, transverse_modes, energies, rho
 
     @property
     def bound_left(self):
