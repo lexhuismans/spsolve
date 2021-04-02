@@ -11,69 +11,40 @@ h_bar = 0.276042828
 m_eff = 1.08  # m_e
 q_e = 1  # elementary charge
 
+def _get_property(property, material, x = 0):
+    if material in materialproperty:
+        return materialproperty[material][property]
+    elif material in alloyproperty:
+        material1 = alloyproperty[material]["material1"]
+        material2 = alloyproperty[material]["material2"]
+
+        prop1 = materialproperty[material1][property]
+        prop2 = materialproperty[material2][property]
+
+        if property in alloyproperty[material]:
+            bowing = alloyproperty[material][property]
+        else:
+            bowing = 0
+
+        return x * prop1 + (1-x) * prop2 - x * (1-x) * bowing
+    else:
+        raise MaterialNotFound
 
 def get_m_e(material, x=0):
-    if material in materialproperty:
-        m_e = materialproperty[material]["m_e"]
-    elif material in alloyproperty:
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-        material1_m_e = materialproperty[material1]["m_e"]
-        material2_m_e = materialproperty[material2]["m_e"]
-        m_e = x * material1_m_e + (1 - x) * material2_m_e
-    else:
-        assert False, "Material {} not in database".format(material)
-    return m_e
-
+    return _get_property('m_e', material, x)
 
 def get_dielectric_constant(material, x=0):
-    if material in materialproperty:
-        eps = materialproperty[material]["epsilonStatic"]
-    elif material in alloyproperty:
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-        material1_eps = materialproperty[material1]["epsilonStatic"]
-        material2_eps = materialproperty[material2]["epsilonStatic"]
-        eps = x * material1_eps + (1 - x) * material2_eps
-    else:
-        assert False, "Material {} not in database".format(material)
-    return eps
+    return _get_property('epsilonStatic', material, x)
 
 
 def get_band_gap(material, x=0):
-    if material in materialproperty:
-        band_gap = materialproperty[material]["Eg"]
-    elif material in alloyproperty:
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-        material1_Eg = materialproperty[material1]["Eg"]
-        material2_Eg = materialproperty[material2]["Eg"]
-        band_gap = (
-            x * material1_Eg
-            + (1 - x) * material2_Eg
-            - x * (1 - x) * alloyproperty[material]["bowing_param"]
-        )
-    else:
-        assert False, "Material {} not in database.".format(material)
-    return band_gap
+    return _get_property('Eg', material, x)
 
 
 def get_band_offset(material, x=0):
-    if material in materialproperty:
-        VBO = materialproperty[material]['VBO']
-        Eg = get_band_gap(material, x)
-        CBO = VBO + Eg
-    elif material in alloyproperty:
-        material1 = alloyproperty[material]["material1"]
-        material2 = alloyproperty[material]["material2"]
-        VBO1 = materialproperty[material1]['VBO']
-        VBO2 = materialproperty[material2]['VBO']
-        VBO = x * VBO1 + (1 - x) * VBO2
-        Eg = get_band_gap(material, x)
-        CBO = VBO + Eg
-    else:
-        assert False, "Material {} not in database.".format(material)
-    return CBO
+    VBO = _get_property('VBO', material, x)
+    Eg = _get_property('Eg', material, x)
+    return VBO + Eg
 
 
 # MATERIAL PROPERTIES
@@ -90,18 +61,48 @@ materialproperty = {
         "Eg": 3.099,
         'VBO': -1.33,
     },
+    'InAs': {
+        'm_e': 0.027,
+        'epsilonStatic': 15.15,
+        'Eg': .417,
+        'VBO': -.59,
+    },
+    'AlSb': {
+        'm_e': .14,
+        'epsilonStatic': 10.9,
+        'Eg': 2.386,
+        'VBO': -.41,
+    },
+    'InSb': {
+        'm_e': 0.0135,
+        'epsilonStatic': 16.8,
+        'Eg': 0.235,
+        'VBO': 0,
+    }
 }
 
 # ALLOY PROPERTIES
 alloyproperty = {
     "AlGaAs": {
-        "bowing_param": 0.37,
         "material1": "AlAs",
         "material2": "GaAs",
+        "Eg": 0.37,
     },
     'GaInAs': {
-        'bowing_param': 0.477,
         'material1': 'GaAs',
         'material2': 'InAs',
+        'Eg': 0.415,
+        'm_e': 0.0092
     },
+    'InSbAs' : {
+        'material1': 'InAs',
+        'material2': 'InSb',
+        'Eg': 0.067,
+        'm_e': 0.035,
+    },
+    'AlInSb': {
+        'material1': 'AlSb',
+        'material2': 'InSb',
+        'Eg': .43,
+    }
 }
