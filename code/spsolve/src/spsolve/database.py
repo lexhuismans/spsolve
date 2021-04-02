@@ -20,7 +20,7 @@ def get_m_e(material, x=0):
         material2 = alloyproperty[material]["material2"]
         material1_m_e = materialproperty[material1]["m_e"]
         material2_m_e = materialproperty[material2]["m_e"]
-        m_e = (x * material1_m_e + (1 - x) * material2_m_e)
+        m_e = x * material1_m_e + (1 - x) * material2_m_e
     else:
         assert False, "Material {} not in database".format(material)
     return m_e
@@ -34,7 +34,7 @@ def get_dielectric_constant(material, x=0):
         material2 = alloyproperty[material]["material2"]
         material1_eps = materialproperty[material1]["epsilonStatic"]
         material2_eps = materialproperty[material2]["epsilonStatic"]
-        eps = (x * material1_eps + (1 - x) * material2_eps)
+        eps = x * material1_eps + (1 - x) * material2_eps
     else:
         assert False, "Material {} not in database".format(material)
     return eps
@@ -60,17 +60,17 @@ def get_band_gap(material, x=0):
 
 def get_band_offset(material, x=0):
     if material in materialproperty:
-        bo = materialproperty[material]['band_offset']
+        bo = materialproperty[material]["band_offset"]
         Eg = get_band_gap(material, x)
-        band_offset = bo*Eg
+        band_offset = bo * Eg
     elif material in alloyproperty:
-        material1 = alloyproperty[material]['material1']
-        material2 = alloyproperty[material]['material2']
-        bo1 = materialproperty[material1]['band_offset']
-        bo2 = materialproperty[material2]['band_offset']
+        material1 = alloyproperty[material]["material1"]
+        material2 = alloyproperty[material]["material2"]
+        bo1 = materialproperty[material1]["band_offset"]
+        bo2 = materialproperty[material2]["band_offset"]
         bo = x * bo1 + (1 - x) * bo2
         Eg = get_band_gap(material, x)
-        band_offset = bo*Eg
+        band_offset = bo * Eg
     else:
         assert False, "Material {} not in database.".format(material)
     return band_offset
@@ -87,7 +87,7 @@ materialproperty = {
         "Ep": 28.8,  # (eV) k.p matrix element (used for non-parabolicity calculation (Vurgaftman2001)
         "F": -1.94,  # Kane parameter (used for non-parabolicity calculation (Vurgaftman2001)
         "band_offset": 0.65,  # conduction band/valence band offset ratio for GaAs - AlGaAs heterojunctions
-        "alpha": .605,  # Varschni parameter alpha
+        "alpha": 0.605,  # Varschni parameter alpha
         "beta": 204,  # Varschni parameter beta
         "m_e_alpha": 5.3782e18,  # conduction band non-parabolicity variable for linear relation (Nelson approach)
         # Valence band constants
@@ -123,7 +123,7 @@ materialproperty = {
         "Ep": 21.1,
         "F": -0.48,
         "band_offset": 0.53,
-        "alpha": .605,
+        "alpha": 0.605,
         "beta": 204,
         "m_e_alpha": 0.0,
         "GA1": 3.45,

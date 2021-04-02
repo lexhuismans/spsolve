@@ -1,12 +1,13 @@
 import math
 from collections import namedtuple
 
-from . import database
+import numpy as np
 
 import kwant
-import numpy as np
 from scipy import optimize
-from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve, eigh
+from scipy.linalg import eigh, eigh_tridiagonal, lu_factor, lu_solve
+
+from . import database
 
 # Physical constants
 k_b = database.k_b
@@ -56,9 +57,7 @@ class StackedLayers:
         doping = np.zeros(self.N)
         band_offset = np.zeros(self.N)
         for i in range(len(layers)):
-            where = np.argwhere(
-                (grid >= L_hj[i]) * (grid <= L_hj[i + 1])
-            )
+            where = np.argwhere((grid >= L_hj[i]) * (grid <= L_hj[i + 1]))
             material = layers[i].material
             x = layers[i].x
             epsilon[where] = database.get_dielectric_constant(material, x)
@@ -75,7 +74,14 @@ class StackedLayers:
         self.N = N
 
         # PROPERTIES
-        self.L, self.grid, self.epsilon, self.m_e, self.doping , self.band_offset = self._set_properties(layers)
+        (
+            self.L,
+            self.grid,
+            self.epsilon,
+            self.m_e,
+            self.doping,
+            self.band_offset,
+        ) = self._set_properties(layers)
         self.dl = self.grid[0]
 
         self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
@@ -161,9 +167,9 @@ class StackedLayers:
         Solve for the charge distribution.
         """
         inner_product = transverse_modes ** 2
-        fd =  fermi_dirac_int(0, energies, self.T)
+        fd = fermi_dirac_int(0, energies, self.T)
 
-        n_e = np.dot(inner_product, fd)*self.DOS
+        n_e = np.dot(inner_product, fd) * self.DOS
         rho = -q_e * n_e + q_e * self.doping
         return rho
 
@@ -201,7 +207,9 @@ class StackedLayers:
         diag = np.real(ham.diagonal())
         off_diag = np.real(ham.diagonal(1))
 
-        energies, transverse_modes = eigh_tridiagonal(diag, off_diag, select='i', select_range = (0, 20))
+        energies, transverse_modes = eigh_tridiagonal(
+            diag, off_diag, select="i", select_range=(0, 20)
+        )
 
         transverse_modes = transverse_modes / math.sqrt(
             self.dl
