@@ -6,7 +6,7 @@ from . import database
 import kwant
 import numpy as np
 from scipy import optimize
-from scipy.linalg import eigh, lu_factor, lu_solve
+from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve, eigh
 
 # Physical constants
 k_b = database.k_b
@@ -42,45 +42,41 @@ def fermi_dirac_int(E_F, E, T):
 
 
 class StackedLayers:
+    def _set_properties(self, layers):
+        L = 0  # Total length (nm)
+        L_hj = np.array([0])
+        for layer in layers:
+            L += layer.L
+            L_hj = np.append(L_hj, L)
+
+        grid = np.linspace(0, L, num=self.N + 2)[1:-1]
+
+        epsilon = np.zeros(self.N)
+        m_e = np.zeros(self.N)
+        doping = np.zeros(self.N)
+        band_offset = np.zeros(self.N)
+        for i in range(len(layers)):
+            where = np.argwhere(
+                (grid >= L_hj[i]) * (grid <= L_hj[i + 1])
+            )
+            material = layers[i].material
+            x = layers[i].x
+            epsilon[where] = database.get_dielectric_constant(material, x)
+            m_e[where] = database.get_m_e(material, x)
+            band_offset[where] = database.get_band_offset(material, x)
+            doping[where] = layers[i].doping
+
+        band_offset = band_offset - band_offset[0]
+        return L, grid, epsilon, m_e, doping, band_offset
+
     def __init__(self, T, N, bound_left, bound_right, *layers):
         self.layers = layers  # Layers (tuple)
         self.T = T
         self.N = N
 
-        self.N_layers = len(layers)
-
-        self.L = 0  # Total length (nm)
-        self.L_hj = np.array([0])
-        for layer in layers:
-            self.L += layer.L
-            self.L_hj = np.append(self.L_hj, self.L)
-
-        self.grid = np.linspace(0, self.L, num=self.N + 2)[1:-1]
-        self.dl = self.grid[0]
-
         # PROPERTIES
-        self.epsilon = np.zeros(self.N)
-        self.m_e = np.zeros(self.N)
-        self.doping = np.zeros(self.N)
-        self.band_offset = np.zeros(self.N)
-        for i in range(self.N_layers):
-            where = np.argwhere(
-                (self.grid >= self.L_hj[i]) * (self.grid <= self.L_hj[i + 1])
-            )
-            material = self.layers[i].material
-            x = self.layers[i].x
-            self.epsilon[where] = database.get_dielectric_constant(material, x)
-            self.m_e[where] = database.get_m_e(material, x)
-            self.band_offset[where] = database.get_band_offset(material, x)
-            self.doping[where] = self.layers[i].doping
-        self.band_offset = self.band_offset - self.band_offset[0]
-
-        self.rho = q_e * self.doping  # Charge distribution
-        self.n_e = np.zeros(self.N)  # Electron density
-        self.phi = np.zeros(self.N)  # Potential
-        self.transverse_modes = np.zeros((self.N, self.N))  # Wavefunctions
-        self.energies = np.zeros(self.N)  # Energies
-        self.band = self.band_offset  # Conduction band
+        self.L, self.grid, self.epsilon, self.m_e, self.doping , self.band_offset = self._set_properties(layers)
+        self.dl = self.grid[0]
 
         self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
 
@@ -165,9 +161,9 @@ class StackedLayers:
         Solve for the charge distribution.
         """
         inner_product = transverse_modes ** 2
-        N_elec = self.DOS * fermi_dirac_int(0, energies, self.T)
+        fd =  fermi_dirac_int(0, energies, self.T)
 
-        n_e = np.dot(inner_product, N_elec)
+        n_e = np.dot(inner_product, fd)*self.DOS
         rho = -q_e * n_e + q_e * self.doping
         return rho
 
@@ -202,8 +198,10 @@ class StackedLayers:
         Gives the wavefunctions for a given potential distribution.
         """
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
+        diag = np.real(ham.diagonal())
+        off_diag = np.real(ham.diagonal(1))
 
-        energies, transverse_modes = eigh(ham)
+        energies, transverse_modes = eigh_tridiagonal(diag, off_diag, select='i', select_range = (0, 20))
 
         transverse_modes = transverse_modes / math.sqrt(
             self.dl
