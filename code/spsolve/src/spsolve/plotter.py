@@ -105,6 +105,27 @@ def plot_charge_density(startV=-1, stopV=1):
     plt.show()
 
 
+def plot_varying_gate(stacked, V_gates, V_surfs):
+
+    def sheet_charge(rho, dl):
+        return np.sum(rho)*dl
+
+    for V_surf in V_surfs:
+        stacked.bound_right = (True, V_surf)
+        rho_2d = np.zeros(len(V_gates))
+        for i in np.arange(len(V_gates)):
+            stacked.bound_left = (True, V_gates[i])
+            phi, _, _, rho = stacked.solve_optimize()
+            rho_2d[i] = sheet_charge(rho, stacked.dl)
+
+        label = '$V_{surf}$' + ' {} V'.format(V_surf)
+        plt.plot(V_gates, rho_2d, label=label)
+
+    plt.xlabel(r'$V_{gate}$ (V)')
+    plt.ylabel(r'$\rho_{sheet} (q_e/nm^{2}$)')
+    plt.legend()
+    plt.show()
+
 def plot_E_n():
     # System
     l = 20  # length of the system (nm)
