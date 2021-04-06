@@ -66,7 +66,7 @@ class StackedLayers:
             doping[where] = layers[i].doping
 
         band_offset = band_offset - band_offset[0]
-        return L, grid, epsilon, m_e, doping, band_offset
+        return L, L_hj, grid, epsilon, m_e, doping, band_offset
 
     def __init__(self, T, N, bound_left, bound_right, *layers):
         self.layers = layers  # Layers (tuple)
@@ -76,12 +76,14 @@ class StackedLayers:
         # PROPERTIES
         (
             self.L,
+            self.L_hj,
             self.grid,
             self.epsilon,
             self.m_e,
             self.doping,
             self.band_offset,
         ) = self._set_properties(layers)
+
         self.dl = self.grid[0]
 
         self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
