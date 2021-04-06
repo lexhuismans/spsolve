@@ -5,7 +5,7 @@ import numpy as np
 
 import kwant
 from scipy import optimize
-from scipy.linalg import eigh, eigh_tridiagonal, lu_factor, lu_solve
+from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve
 
 from . import database
 
@@ -88,13 +88,10 @@ class StackedLayers:
 
         self.DOS = self.m_e / (math.pi * h_bar ** 2)  # Density of States
 
-        self.pois_matrix = np.zeros((N, N))
-        self.bound_left = bound_left
-        self.bound_right = bound_right
-        self.make_pois_matrix()
+        self.make_pois_matrix(bound_left, bound_right)
         self.make_system()
 
-    def make_pois_matrix(self):
+    def make_pois_matrix(self, bound_left, bound_right):
         """
         Compute the matrix that is used for solving the Poisson equation.
         """
@@ -115,13 +112,8 @@ class StackedLayers:
             np.diag(km1[1::], k=-1) + np.diag(k, k=0) + np.diag(kp1[0:-1], k=1)
         )
 
-        if self.bound_left[0] is False:
-            self.pois_matrix[0, 1] += prefac * self.epsilon[0]
-        if self.bound_right[0] is False:
-            self.pois_matrix[-1, -2] += prefac * self.epsilon[-1]
-
-        lu, piv = lu_factor(self.pois_matrix)
-        self.pois_matrix_lu_piv = (lu, piv)
+        self.bound_left = bound_left
+        self.bound_right = bound_right
 
     def make_system(self):
         """
@@ -267,6 +259,7 @@ class StackedLayers:
             self.pois_matrix[-1, -2] += prefac * self.epsilon[-1]
 
         lu, piv = lu_factor(self.pois_matrix)
+
         self.pois_matrix_lu_piv = (lu, piv)
         self.__bound_right = bound
 
