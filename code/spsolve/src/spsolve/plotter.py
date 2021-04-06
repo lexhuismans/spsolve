@@ -15,8 +15,19 @@ m_eff = 1.08  # effective mass of electron
 PERMETTIVITY = 0.055263494  # q_e/(V*nm)
 q_e = 1  # elementary charge
 
+def _set_axis(ax, xlabel, ylabel, title=None, vlines=None):
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if title is not None:
+        ax.set_title(title)
 
-def plot_charge(grid, rho, ax=None, rho_fit=None):
+    if vlines is not None:
+        for x in vlines:
+            ax.axvline(x=x)
+
+    return ax
+
+def plot_charge(grid, rho, ax=None, rho_fit=None, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
@@ -29,13 +40,14 @@ def plot_charge(grid, rho, ax=None, rho_fit=None):
     ax.set_ylabel(r"Charge ($q_e/nm^3$)")
 
     if ax is None:
+        _set_axis(ax, 'Position (nm)', r'Charge ($q_e/nm^3$)', **options)
         plt.show()
     else:
-        ax.set_title("Charge distribution")
+        _set_axis(ax, 'Position (nm)', r'Charge ($q_e/nm^3$)', title='Charge distribution', **options)
         return ax
 
 
-def plot_band(grid, band, ax=None):
+def plot_band(grid, band, ax=None, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
@@ -45,13 +57,15 @@ def plot_band(grid, band, ax=None):
     ax.set_ylabel("Energy (eV)")
 
     if ax is None:
+        _set_axis(ax, 'Position (nm)', 'Energy (eV)', **options)
         plt.show()
     else:
+        _set_axis(ax, 'Position (nm)', 'Energy (eV)', title='Conduction band', **options)
         ax.set_title("Conduction band")
         return ax
 
 
-def plot_wave(grid, psi, energies, ax=None, n_waves = 3):
+def plot_wave(grid, psi, energies, ax=None, n_waves = 3, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
@@ -63,22 +77,26 @@ def plot_wave(grid, psi, energies, ax=None, n_waves = 3):
     ax.set_ylabel("$|\psi|^2$")
 
     if ax is None:
+        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$")
+        ax.legend()
+        ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         plt.show()
     else:
         ax.set_title("Probability ($nm^{-1}$)")
+        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$", title=r"Probability ($nm^{-1}$)", **options)
+        ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         return ax
 
 
-def plot_distributions(grid, rho, band, psi, energies):
+def plot_distributions(grid, rho, band, psi, energies, **options):
     fig, ax = plt.subplots(3)
 
-    plot_charge(grid, rho, ax[0])
-    plot_band(grid, band, ax[1])
-    plot_wave(grid, psi, energies, ax = ax[2])
+    plot_charge(grid, rho, ax[0], **options)
+    plot_band(grid, band, ax[1], **options)
+    plot_wave(grid, psi, energies, ax = ax[2], **options)
 
     fig.tight_layout()
     plt.show()
-
 
 def plot_charge_density(startV=-1, stopV=1):
     N = 200
@@ -103,6 +121,21 @@ def plot_charge_density(startV=-1, stopV=1):
     plt.xlabel("$V_0$ (V)")
     plt.ylabel("$n_e$ ($q_e/nm^3$)")
     plt.show()
+
+
+def plot_optimize(stacked, options=None):
+    if options is None:
+        options = {}
+
+    options = dict(options)
+
+    options.setdefault('vlines', None)
+    if options['vlines'] is not None:
+        options['vlines'] = stacked.L_hj
+
+    band, modes, energies, charge = stacked.solve_optimize()
+
+    plot_distributions(stacked.grid, charge, band, modes, energies, **options)
 
 
 def plot_varying_gate(stacked, V_gates, V_surfs):
