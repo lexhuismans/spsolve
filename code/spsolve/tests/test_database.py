@@ -33,5 +33,6 @@ def test_get_band_offset():
     material1 = 'GaAs'
     material2 = 'AlGaAs'
     x = .3
-    assert db.get_band_offset(material1) == pytest.approx(.924495, .01)
-    assert db.get_band_offset(material2, x) == pytest.approx(1.1564, 0.01)
+    CBO1 = db.get_band_offset(material1)
+    CBO2 = db.get_band_offset(material2, x)
+    assert CBO2-CBO1 == pytest.approx(.2319, .01)
