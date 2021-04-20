@@ -177,7 +177,7 @@ class StackedLayers:
             # Dirichlet
             adjusted_rho[0] += (
                 self.epsilon[0]
-                * (self.bound_left[1] - self.band_offset[0])
+                * (self.bound_left[1] + self.band_offset[0]/q_e)
                 / self.dl ** 2
             )
         else:
@@ -188,7 +188,7 @@ class StackedLayers:
             # Dirichlet
             adjusted_rho[-1] += (
                 self.epsilon[-1]
-                * (self.bound_right[1] - self.band_offset[-1])
+                * (self.bound_right[1] + self.band_offset[-1]/q_e)
                 / self.dl ** 2
             )
         else:
@@ -248,9 +248,12 @@ class StackedLayers:
 
     @bound_left.setter
     def bound_left(self, bound):
+        prefac = -1 / self.dl ** 2
         if bound[0] is False:
-            prefac = -1 / self.dl ** 2
+            self.pois_matrix[0,:2] = prefac * np.array([-2, 1]) * self.epsilon[0]
             self.pois_matrix[0, 1] += prefac * self.epsilon[0]
+        else:
+            self.pois_matrix[0,:2] = prefac * np.array([-2, 1]) * self.epsilon[0]
 
         lu, piv = lu_factor(self.pois_matrix)
         self.pois_matrix_lu_piv = (lu, piv)
@@ -262,15 +265,17 @@ class StackedLayers:
 
     @bound_right.setter
     def bound_right(self, bound):
+        prefac = -1 / self.dl ** 2
         if bound[0] is False:
-            prefac = -1 / self.dl ** 2
+            self.pois_matrix[-1, -2:] = prefac * np.array([1, -2]) * self.epsilon[-1]
             self.pois_matrix[-1, -2] += prefac * self.epsilon[-1]
+        else:
+            self.pois_matrix[-1, -2:] = prefac * np.array([1, -2]) * self.epsilon[-1]
 
         lu, piv = lu_factor(self.pois_matrix)
 
         self.pois_matrix_lu_piv = (lu, piv)
         self.__bound_right = bound
-
 
 # -----------------------Non Class Code---------------------------
 
