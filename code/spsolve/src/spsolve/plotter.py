@@ -1,11 +1,5 @@
-import math
-import time
-
 import matplotlib.pyplot as plt
 import numpy as np
-
-from scipy.optimize import minimize as scipy_minimize
-from scipy.optimize import root as scipy_root
 
 from . import solver
 
@@ -14,6 +8,7 @@ h_bar = 0.276042828  # eV s
 m_eff = 1.08  # effective mass of electron
 PERMETTIVITY = 0.055263494  # q_e/(V*nm)
 q_e = 1  # elementary charge
+
 
 def _set_axis(ax, xlabel, ylabel, title=None, vlines=None):
     ax.set_xlabel(xlabel)
@@ -27,6 +22,7 @@ def _set_axis(ax, xlabel, ylabel, title=None, vlines=None):
 
     return ax
 
+
 def plot_charge(grid, rho, ax=None, rho_fit=None, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
@@ -35,9 +31,6 @@ def plot_charge(grid, rho, ax=None, rho_fit=None, **options):
     if not isinstance(rho_fit, type(None)):
         ax.plot(grid[1:-1], rho_fit[1:-1], label="Analytical")
         ax.legend()
-
-    ax.set_xlabel("Position (nm)")
-    ax.set_ylabel(r"Charge ($q_e/nm^3$)")
 
     if ax is None:
         _set_axis(ax, 'Position (nm)', r'Charge ($q_e/nm^3$)', **options)
@@ -52,9 +45,6 @@ def plot_band(grid, band, ax=None, **options):
         fig, ax = plt.subplots(1)
 
     ax.plot(grid, band)
-
-    ax.set_xlabel("Position (nm)")
-    ax.set_ylabel("Energy (eV)")
 
     if ax is None:
         _set_axis(ax, 'Position (nm)', 'Energy (eV)', **options)
@@ -73,22 +63,18 @@ def plot_wave(grid, psi, energies, ax=None, n_waves = 3, **options):
     for n in np.arange(n_waves - 1) + 1:
         ax.plot(grid, psi[:, n] ** 2, label="$E_{}$ = {:f} eV".format(n, energies[n]))
 
-    ax.set_xlabel("Position (nm)")
-    ax.set_ylabel("$|\psi|^2$")
-
     if ax is None:
-        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$")
+        _set_axis(ax, 'Position (nm)', r"$|\psi|^2 (1/nm)$")
         ax.legend()
         ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         plt.show()
     else:
-        ax.set_title("Probability ($nm^{-1}$)")
-        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$", title=r"Probability ($nm^{-1}$)", **options)
+        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$ ($nm^{-1}$)", title=r"Probability", **options)
         ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         return ax
 
 
-def plot_distributions(grid, rho, band, psi, energies, **options):
+def plot_distributions(grid, band, psi, energies, rho, **options):
     fig, ax = plt.subplots(3)
 
     plot_charge(grid, rho, ax[0], **options)
@@ -97,6 +83,7 @@ def plot_distributions(grid, rho, band, psi, energies, **options):
 
     fig.tight_layout()
     plt.show()
+
 
 def plot_charge_density(startV=-1, stopV=1):
     N = 200
@@ -138,26 +125,29 @@ def plot_optimize(stacked, options=None):
     plot_distributions(stacked.grid, charge, band, modes, energies, **options)
 
 
-def plot_varying_gate(stacked, V_gates, V_surfs):
-
+def plot_varying_gate(stacked, V_gates, V_surfs, legend=True):
     def sheet_charge(rho, dl):
         return np.sum(rho)*dl
 
     for V_surf in V_surfs:
         stacked.bound_right = (True, V_surf)
+        band = stacked.solve_poisson(np.zeros(stacked.N))
         rho_2d = np.zeros(len(V_gates))
         for i in np.arange(len(V_gates)):
             stacked.bound_left = (True, V_gates[i])
-            phi, _, _, rho = stacked.solve_optimize()
+            stacked.bound_right = (True, V_gates[i])
+            band, _, _, rho = stacked.solve_optimize(band)
             rho_2d[i] = sheet_charge(rho, stacked.dl)
 
         label = '$V_{surf}$' + ' {} V'.format(V_surf)
         plt.plot(V_gates, rho_2d, label=label)
 
-    plt.xlabel(r'$V_{gate}$ (V)')
+    plt.xlabel(r'$V_{0}$ (V)')
     plt.ylabel(r'$\rho_{sheet} (q_e/nm^{2}$)')
-    plt.legend()
+    if legend:
+        plt.legend()
     plt.show()
+
 
 def plot_E_n():
     # System
@@ -166,7 +156,6 @@ def plot_E_n():
     N_V = 40
     grid = np.linspace(0, l, N)
     dl = grid[1]
-    E_fermi = 0.8  # eV
 
     # Boundary conditions
     dirichlet_left = True
