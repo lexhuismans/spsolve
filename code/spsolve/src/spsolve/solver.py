@@ -25,8 +25,8 @@ def fermi_dirac(E_f, E, T):
 
 def fermi_dirac_int(E_F, E, T):
     """
-    Computes the integral of the Fermi-Dirac distribution. Trapezoidal integration. (As is needed for
-    the number of electrons in a subband (n) with a two dimensional DOS)
+    Computes the integral of the Fermi-Dirac distribution. Trapezoidal integration.
+    (As is needed forthe number of electrons in a subband (n) with a two dimensional DOS)
     """
     if T == 0:
         below_fermi = E < E_F
@@ -65,7 +65,6 @@ class StackedLayers:
             band_offset[where] = database.get_band_offset(material, x)
             doping[where] = layers[i].doping
 
-        band_offset = band_offset - band_offset[0]
         return L, L_hj, grid, epsilon, m_e, doping, band_offset
 
     def __init__(self, T, N, bound_left, bound_right, *layers):
@@ -176,14 +175,22 @@ class StackedLayers:
         # --------------------BOUNDARIES----------------------
         if self.bound_left[0]:
             # Dirichlet
-            adjusted_rho[0] += self.epsilon[0] * self.bound_left[1] / self.dl ** 2
+            adjusted_rho[0] += (
+                self.epsilon[0]
+                * (self.bound_left[1] - self.band_offset[0])
+                / self.dl ** 2
+            )
         else:
             # Neumann
             adjusted_rho[0] += -2 * self.bound_left[1] * self.epsilon[0] / self.dl
 
         if self.bound_right[0]:
             # Dirichlet
-            adjusted_rho[-1] += self.epsilon[-1] * self.bound_right[1] / self.dl ** 2
+            adjusted_rho[-1] += (
+                self.epsilon[-1]
+                * (self.bound_right[1] - self.band_offset[-1])
+                / self.dl ** 2
+            )
         else:
             # Neumann
             adjusted_rho[-1] += 2 * self.bound_right[1] * self.epsilon[-1] / self.dl
@@ -211,7 +218,7 @@ class StackedLayers:
 
         return transverse_modes, energies
 
-    def solve_optimize(self):
+    def solve_optimize(self, band_init=None):
         def self_consistent(band):
             band_old = band.copy()
 
@@ -223,10 +230,11 @@ class StackedLayers:
             diff = band_old - band
             return diff
 
-        band = self.solve_poisson(np.zeros(self.N))
+        if band_init is None:
+            band_init = self.solve_poisson(np.zeros(self.N))
 
         optim_result = optimize.root(
-            self_consistent, band, method="anderson"  # , options=dict(maxiter=3)
+            self_consistent, band_init, method="anderson"  # , options=dict(maxiter=3)
         )
         band = optim_result.x
         transverse_modes, energies = self.solve_schrodinger(band)
