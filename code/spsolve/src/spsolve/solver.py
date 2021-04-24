@@ -20,8 +20,10 @@ Material = namedtuple("Material", ["material", "L", "x", "doping"], defaults=[0,
 
 
 def fermi_dirac(E_f, E, T):
-    return 1 / (1 + np.exp((E - E_f) / k_b / T))
-
+    if T == 0:
+        return E < E_f
+    else:
+        return 1 / (1 + np.exp((E - E_f) / k_b / T))
 
 def fermi_dirac_int(E_F, E, T):
     """
@@ -239,6 +241,49 @@ class StackedLayers:
         band = optim_result.x
         transverse_modes, energies = self.solve_schrodinger(band)
         rho = self.solve_charge(transverse_modes, energies)
+
+        return band, transverse_modes, energies, rho
+
+    def solve_charge_dos(self, band):
+        ks = np.linspace(0, .4, 200)
+        dk = ks[1]
+        n_e = np.zeros(self.N)
+
+        for k in ks:
+            E_k = (h_bar * k)**2 / (2 * self.m_e)
+            adjusted_band = band + E_k
+            psi, energies = self.solve_schrodinger(adjusted_band)
+
+            inner_product = psi ** 2
+            fd = fermi_dirac(0, energies, self.T)
+            n_e += np.dot(inner_product, fd) * k * dk
+            if fd[0] < 1e-5:
+                break
+
+        n_e = n_e * 4 * math.pi / (2*math.pi)**2
+        rho = -q_e * n_e + q_e * self.doping
+        return rho
+
+    def solve_optimize_dos(self, band_init=None):
+        def self_consistent(band):
+            band_old = band.copy()
+
+            rho = self.solve_charge_dos(band)
+            band = self.solve_poisson(rho)
+
+            # Compute error
+            diff = band_old - band
+            return diff
+
+        if band_init is None:
+            band_init = self.solve_poisson(np.zeros(self.N))
+
+        optim_result = optimize.root(
+            self_consistent, band_init, method="anderson"  # , options=dict(maxiter=3)
+        )
+        band = optim_result.x
+        rho = self.solve_charge_dos(band)
+        transverse_modes, energies = self.solve_schrodinger(band)
 
         return band, transverse_modes, energies, rho
 
