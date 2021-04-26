@@ -25,6 +25,7 @@ def fermi_dirac(E_f, E, T):
     else:
         return 1 / (1 + np.exp((E - E_f) / k_b / T))
 
+
 def fermi_dirac_int(E_F, E, T):
     """
     Computes the integral of the Fermi-Dirac distribution. Trapezoidal integration.
@@ -62,7 +63,7 @@ class StackedLayers:
             where = np.argwhere((grid >= L_hj[i]) * (grid <= L_hj[i + 1]))
             material = layers[i].material
             x = layers[i].x
-            epsilon[where] = database.get_dielectric_constant(material, x)
+            epsilon[where] = database.get_dielectric_constant(material, x) * epsilon_0
             m_e[where] = database.get_m_e(material, x)
             band_offset[where] = database.get_band_offset(material, x)
             doping[where] = layers[i].doping
@@ -202,7 +203,7 @@ class StackedLayers:
         band = -q_e * phi + self.band_offset
         return band
 
-    def solve_schrodinger(self, band):
+    def solve_schrodinger(self, band, n_modes=21):
         """
         Gives the wavefunctions for a given potential distribution.
         """
@@ -211,7 +212,7 @@ class StackedLayers:
         off_diag = np.real(ham.diagonal(1))
 
         energies, transverse_modes = eigh_tridiagonal(
-            diag, off_diag, select="i", select_range=(0, 20)
+            diag, off_diag, select="i", select_range=(0, n_modes-1)
         )
 
         transverse_modes = transverse_modes / math.sqrt(
@@ -238,6 +239,7 @@ class StackedLayers:
         optim_result = optimize.root(
             self_consistent, band_init, method="anderson"  # , options=dict(maxiter=3)
         )
+
         band = optim_result.x
         transverse_modes, energies = self.solve_schrodinger(band)
         rho = self.solve_charge(transverse_modes, energies)
@@ -248,17 +250,21 @@ class StackedLayers:
         ks = np.linspace(0, .4, 200)
         dk = ks[1]
         n_e = np.zeros(self.N)
-
+        n_modes = 21
         for k in ks:
             E_k = (h_bar * k)**2 / (2 * self.m_e)
             adjusted_band = band + E_k
-            psi, energies = self.solve_schrodinger(adjusted_band)
+            psi, energies = self.solve_schrodinger(adjusted_band, n_modes)
 
             inner_product = psi ** 2
             fd = fermi_dirac(0, energies, self.T)
             n_e += np.dot(inner_product, fd) * k * dk
-            if fd[0] < 1e-5:
+
+            # Speed up optimisation
+            rel_modes = np.argwhere(fd > 1e-5) # relevant modes
+            if rel_modes.size == 0:
                 break
+            n_modes = int(rel_modes[-1]+1)
 
         n_e = n_e * 4 * math.pi / (2*math.pi)**2
         rho = -q_e * n_e + q_e * self.doping
@@ -267,7 +273,6 @@ class StackedLayers:
     def solve_optimize_dos(self, band_init=None):
         def self_consistent(band):
             band_old = band.copy()
-
             rho = self.solve_charge_dos(band)
             band = self.solve_poisson(rho)
 
@@ -295,10 +300,10 @@ class StackedLayers:
     def bound_left(self, bound):
         prefac = -1 / self.dl ** 2
         if bound[0] is False:
-            self.pois_matrix[0,:2] = prefac * np.array([-2, 1]) * self.epsilon[0]
+            self.pois_matrix[0, :2] = prefac * np.array([-2, 1]) * self.epsilon[0]
             self.pois_matrix[0, 1] += prefac * self.epsilon[0]
         else:
-            self.pois_matrix[0,:2] = prefac * np.array([-2, 1]) * self.epsilon[0]
+            self.pois_matrix[0, :2] = prefac * np.array([-2, 1]) * self.epsilon[0]
 
         lu, piv = lu_factor(self.pois_matrix)
         self.pois_matrix_lu_piv = (lu, piv)
