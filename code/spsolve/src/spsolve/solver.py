@@ -8,6 +8,7 @@ from scipy import optimize
 from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve
 
 from . import database
+from . import plotter
 
 # Physical constants
 k_b = database.k_b
@@ -74,6 +75,7 @@ class StackedLayers:
         self.layers = layers  # Layers (tuple)
         self.T = T
         self.N = N
+        self.CBO = 0
 
         # PROPERTIES
         (
@@ -85,6 +87,8 @@ class StackedLayers:
             self.doping,
             self.band_offset,
         ) = self._set_properties(layers)
+
+        self.band_offset = self.band_offset-np.amin(self.band_offset)
 
         self.dl = self.grid[0]
 
@@ -180,7 +184,7 @@ class StackedLayers:
             # Dirichlet
             adjusted_rho[0] += (
                 self.epsilon[0]
-                * (self.bound_left[1] + self.band_offset[0]/q_e)
+                * (self.bound_left[1])
                 / self.dl ** 2
             )
         else:
@@ -191,7 +195,7 @@ class StackedLayers:
             # Dirichlet
             adjusted_rho[-1] += (
                 self.epsilon[-1]
-                * (self.bound_right[1] + self.band_offset[-1]/q_e)
+                * (self.bound_right[1])
                 / self.dl ** 2
             )
         else:
@@ -200,7 +204,7 @@ class StackedLayers:
 
         # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
-        band = -q_e * phi + self.band_offset
+        band = -q_e * phi + self.band_offset + self.CBO
         return band
 
     def solve_schrodinger(self, band, n_modes=21):
@@ -231,6 +235,7 @@ class StackedLayers:
 
             # Compute error
             diff = band_old - band
+            plotter.plot_distributions(self.grid, band, psi, energies, rho)
             return diff
 
         if band_init is None:
@@ -261,7 +266,7 @@ class StackedLayers:
             n_e += np.dot(inner_product, fd) * k * dk
 
             # Speed up optimisation
-            rel_modes = np.argwhere(fd > 1e-5) # relevant modes
+            rel_modes = np.argwhere(fd > 1e-6) # relevant modes
             if rel_modes.size == 0:
                 break
             n_modes = int(rel_modes[-1]+1)
@@ -284,8 +289,9 @@ class StackedLayers:
             band_init = self.solve_poisson(np.zeros(self.N))
 
         optim_result = optimize.root(
-            self_consistent, band_init, method="anderson"  # , options=dict(maxiter=3)
+            self_consistent, band_init, method="anderson" , options=dict(fatol=1e-3)
         )
+        print(optim_result.nit)
         band = optim_result.x
         rho = self.solve_charge_dos(band)
         transverse_modes, energies = self.solve_schrodinger(band)
