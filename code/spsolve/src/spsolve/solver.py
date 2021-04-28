@@ -76,6 +76,8 @@ class StackedLayers:
         self.T = T
         self.N = N
         self.CBO = 0
+        self.schrod_start = 0
+        self.schrod_stop = N - 1
 
         # PROPERTIES
         (
@@ -88,7 +90,7 @@ class StackedLayers:
             self.band_offset,
         ) = self._set_properties(layers)
 
-        self.band_offset = self.band_offset-np.amin(self.band_offset)
+        self.band_offset = self.band_offset - np.amin(self.band_offset)
 
         self.dl = self.grid[0]
 
@@ -127,23 +129,26 @@ class StackedLayers:
         template = kwant.continuum.discretize('k_x * A(x) * k_x + V(x)')
         print(template)
         """
-        m_e_full = np.concatenate(([self.m_e[0]], self.m_e, [self.m_e[-1]]))
+        N = self.schrod_stop + 1 - self.schrod_start
+
+        m_e = self.m_e[self.schrod_start : self.schrod_stop + 1]
+        m_e_full = np.concatenate(([m_e[0]], m_e, [m_e[-1]]))
         m_e_half = np.convolve(m_e_full, [0.5, 0.5], "valid")
         m_e_imh = m_e_half[0:-1]
         m_e_iph = m_e_half[1::]
 
         lat = kwant.lattice.chain(self.dl)
         syst = kwant.Builder()
-        # ONSITE
 
+        # ONSITE
         def onsite(site, pot):
             i = site.tag
             t = h_bar ** 2 / (2 * self.dl ** 2) * (1 / m_e_imh[i] + 1 / m_e_iph[i])
             return t + pot[i]
 
-        syst[(lat(x) for x in range(int(self.N)))] = onsite
+        syst[(lat(x) for x in range(int(N)))] = onsite
         # HOPPING
-        for i in np.arange(self.N - 1) + 1:
+        for i in np.arange(N - 1) + 1:
             t = h_bar ** 2 / (2 * m_e_imh[i] * self.dl ** 2)
             syst[lat(i), lat(i - 1)] = -t
 
@@ -182,22 +187,14 @@ class StackedLayers:
         # --------------------BOUNDARIES----------------------
         if self.bound_left[0]:
             # Dirichlet
-            adjusted_rho[0] += (
-                self.epsilon[0]
-                * (self.bound_left[1])
-                / self.dl ** 2
-            )
+            adjusted_rho[0] += self.epsilon[0] * (self.bound_left[1]) / self.dl ** 2
         else:
             # Neumann
             adjusted_rho[0] += -2 * self.bound_left[1] * self.epsilon[0] / self.dl
 
         if self.bound_right[0]:
             # Dirichlet
-            adjusted_rho[-1] += (
-                self.epsilon[-1]
-                * (self.bound_right[1])
-                / self.dl ** 2
-            )
+            adjusted_rho[-1] += self.epsilon[-1] * (self.bound_right[1]) / self.dl ** 2
         else:
             # Neumann
             adjusted_rho[-1] += 2 * self.bound_right[1] * self.epsilon[-1] / self.dl
@@ -211,19 +208,23 @@ class StackedLayers:
         """
         Gives the wavefunctions for a given potential distribution.
         """
+        band = band[self.schrod_start : self.schrod_stop + 1]
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
         diag = np.real(ham.diagonal())
         off_diag = np.real(ham.diagonal(1))
 
         energies, transverse_modes = eigh_tridiagonal(
-            diag, off_diag, select="i", select_range=(0, n_modes-1)
+            diag, off_diag, select="i", select_range=(0, n_modes - 1)
         )
 
         transverse_modes = transverse_modes / math.sqrt(
             self.dl
         )  # Every column is a wavefunction
 
-        return transverse_modes, energies
+        # Add zeros to modes
+        full_waves = np.zeros((self.N, transverse_modes.shape[1]))
+        full_waves[self.schrod_start : self.schrod_stop + 1, :] = transverse_modes
+        return full_waves, energies
 
     def solve_optimize(self, band_init=None):
         def self_consistent(band):
@@ -252,12 +253,12 @@ class StackedLayers:
         return band, transverse_modes, energies, rho
 
     def solve_charge_dos(self, band):
-        ks = np.linspace(0, .4, 200)
+        ks = np.linspace(0, 0.4, 200)
         dk = ks[1]
         n_e = np.zeros(self.N)
         n_modes = 21
         for k in ks:
-            E_k = (h_bar * k)**2 / (2 * self.m_e)
+            E_k = (h_bar * k) ** 2 / (2 * self.m_e)
             adjusted_band = band + E_k
             psi, energies = self.solve_schrodinger(adjusted_band, n_modes)
 
@@ -266,12 +267,12 @@ class StackedLayers:
             n_e += np.dot(inner_product, fd) * k * dk
 
             # Speed up optimisation
-            rel_modes = np.argwhere(fd > 1e-6) # relevant modes
+            rel_modes = np.argwhere(fd > 1e-6)  # relevant modes
             if rel_modes.size == 0:
                 break
-            n_modes = int(rel_modes[-1]+1)
+            n_modes = int(rel_modes[-1] + 1)
 
-        n_e = n_e * 4 * math.pi / (2*math.pi)**2
+        n_e = n_e * 4 * math.pi / (2 * math.pi) ** 2
         rho = -q_e * n_e + q_e * self.doping
         return rho
 
@@ -289,7 +290,7 @@ class StackedLayers:
             band_init = self.solve_poisson(np.zeros(self.N))
 
         optim_result = optimize.root(
-            self_consistent, band_init, method="anderson" , options=dict(fatol=1e-3)
+            self_consistent, band_init, method="anderson", options=dict(fatol=1e-3)
         )
         print(optim_result.nit)
         band = optim_result.x
@@ -332,6 +333,26 @@ class StackedLayers:
 
         self.pois_matrix_lu_piv = (lu, piv)
         self.__bound_right = bound
+
+    @property
+    def schrod_where(self):
+        return self.__schrod_where
+
+    @schrod_where.setter
+    def schrod_where(self, bounds):
+        try:
+            x0 = np.argwhere(self.grid <= bounds[0])[-1]
+        except IndexError:
+            x0 = 0
+        try:
+            x1 = np.argwhere(self.grid >= bounds[1])[0]
+        except IndexError:
+            x1 = self.N-1
+
+        self.schrod_start = int(x0)
+        self.schrod_stop = int(x1)
+        self.__schrod_where = (self.grid[x0], self.grid[x1])
+        self.make_system()
 
 # -----------------------Non Class Code---------------------------
 
