@@ -264,7 +264,7 @@ class StackedLayers:
             psi, energies = self.solve_schrodinger(adjusted_band, n_modes)
 
             inner_product = psi ** 2
-            fd = fermi_dirac(0, energies, self.T)
+            fd = fermi_dirac_int(0, energies, self.T)
             n_e += np.dot(inner_product, fd) * k * dk
 
             # Speed up optimisation
