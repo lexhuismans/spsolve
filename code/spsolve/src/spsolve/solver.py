@@ -236,7 +236,7 @@ class StackedLayers:
 
             # Compute error
             diff = band_old - band
-            plotter.plot_distributions(self.grid, band, psi, energies, rho)
+            #plotter.plot_distributions(self.grid, band, psi, energies, rho)
             return diff
 
         if band_init is None:
@@ -253,10 +253,11 @@ class StackedLayers:
         return band, transverse_modes, energies, rho
 
     def solve_charge_dos(self, band):
-        ks = np.linspace(0, 0.4, 200)
+        ks = np.linspace(0, 1, 1000)
         dk = ks[1]
         n_e = np.zeros(self.N)
         n_modes = 21
+
         for k in ks:
             E_k = (h_bar * k) ** 2 / (2 * self.m_e)
             adjusted_band = band + E_k
@@ -279,11 +280,14 @@ class StackedLayers:
     def solve_optimize_dos(self, band_init=None):
         def self_consistent(band):
             band_old = band.copy()
+
             rho = self.solve_charge_dos(band)
             band = self.solve_poisson(rho)
 
             # Compute error
             diff = band_old - band
+            #psi, energies = self.solve_schrodinger(band)
+            #plotter.plot_distributions(self.grid, band, psi, energies, rho)
             return diff
 
         if band_init is None:
@@ -292,12 +296,94 @@ class StackedLayers:
         optim_result = optimize.root(
             self_consistent, band_init, method="anderson", options=dict(fatol=1e-3)
         )
-        print(optim_result.nit)
         band = optim_result.x
+        print(optim_result.nit)
         rho = self.solve_charge_dos(band)
         transverse_modes, energies = self.solve_schrodinger(band)
 
         return band, transverse_modes, energies, rho
+
+    def solve_under_relax(self, lamb=.001):
+        diff = 2
+        tolerance = 1
+        max_iter = 1000
+
+        band_in = self.solve_poisson(np.zeros(self.N))
+
+        iter = 0
+        while diff > tolerance and max_iter > iter:
+            rho = self.solve_charge_dos(band_in)
+            band_out = self.solve_poisson(rho)
+
+            band_in = (1 - lamb) * band_in + lamb * band_out
+
+            diff = np.sum(np.abs(band_in - band_out))
+            iter += 1
+
+        if max_iter > iter:
+            print('Max iteration of {:d} reached'.format(max_iter))
+
+        modes, energies = self.solve_schrodinger(band_out)
+
+        return band_out, modes, energies, rho
+
+    def charge_pred(self, band, band_prev):
+        def get_jac(E, E_f=0):
+            return q_e * (E < E_f) # Not including temperature
+
+        ks = np.linspace(0, 0.4, 200)
+        dk = ks[1]
+        n_e = np.zeros(self.N)
+        jac = np.zeros(self.N)
+        n_modes = 21
+        for k in ks:
+            E_k = (h_bar * k) ** 2 / (2 * self.m_e)
+            adjusted_band = band + E_k
+            psi, energies = self.solve_schrodinger(adjusted_band, n_modes)
+
+            inner_product = psi ** 2
+            E = np.add.outer(adjusted_band - band_prev, energies)
+            fd = fermi_dirac(0, E, self.T)
+            n_e += np.sum(inner_product * fd, axis=1) * k * dk
+            jac += np.sum(inner_product * get_jac(E), axis=1) * k * dk
+
+            # Speed up optimisation
+            rel_modes = np.argwhere(fd[0, :] > 1e-6)  # relevant modes
+            if rel_modes.size == 0:
+                break
+            n_modes = int(rel_modes[-1] + 1)
+
+        n_e = n_e * 4 * math.pi / (2 * math.pi) ** 2
+        rho = -q_e * n_e + q_e * self.doping
+        return rho#, jac
+
+    def solve_pred_corr(self):
+        diff = 1
+        error = 1e-3
+        band_prev = self.solve_poisson(np.zeros(self.N))
+
+        def find_phi(band, band_prev):
+            rho = self.charge_pred(band, band_prev)
+            band_new = self.solve_poisson(rho)
+            return band_new - band#, np.outer(jac, np.ones(self.N))
+
+        while diff > error:
+            # Find phi
+            sol = optimize.root(find_phi, band_prev, method='hybr', args=(band_prev), jac=True)
+
+            # Find charge
+            band = sol.x
+            rho = self.solve_charge_dos(band)
+            band = self.solve_poisson(rho)
+
+            diff = np.sum(band_prev - band)
+            band_prev = band
+
+        rho = self.solve_charge_dos(band)
+        print(band)
+        modes, energies = self.solve_schrodinger(band, 10)
+        print(rho)
+        return band, modes, energies, rho
 
     @property
     def bound_left(self):
@@ -341,11 +427,11 @@ class StackedLayers:
     @schrod_where.setter
     def schrod_where(self, bounds):
         try:
-            x0 = np.argwhere(self.grid <= bounds[0])[-1]
+            x0 = np.argwhere(self.grid >= bounds[0])[0]
         except IndexError:
             x0 = 0
         try:
-            x1 = np.argwhere(self.grid >= bounds[1])[0]
+            x1 = np.argwhere(self.grid <= bounds[1])[-1]
         except IndexError:
             x1 = self.N-1
 
