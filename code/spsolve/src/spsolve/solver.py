@@ -295,14 +295,10 @@ class StackedLayers:
             trial_error = (rho_prev - rho)
             matrix = -self.pois_matrix + np.diag(-q_e * self.solve_delta_charge(phi))
             delta_phi = np.linalg.solve(matrix, -trial_error)
-            print(delta_phi)
             phi = phi + delta_phi
             error = np.sum(np.abs(trial_error))
-            print('error: ', error)
-            band = -q_e * phi + self.band_offset + self.CBO
-            psi, energies = self.solve_schrodinger(band)
-            plotter.plot_distributions(self.grid, band, psi, energies, rho)
 
+        print('error: ', error)
         band = -q_e * phi + self.band_offset + self.CBO
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
