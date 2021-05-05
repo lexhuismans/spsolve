@@ -283,22 +283,36 @@ class StackedLayers:
     def solve_delta_charge(self, phi):
         return q_e * self._solve_charge(phi, fermi_dirac)
 
-    def solve_snider(self):
-        error = 1
-        tolerance = 1e-4*self.N
+    def solve_snider(self, band_init=None):
+        error = np.ones(self.N)
+        tolerance = 1e-6
 
         rho_prev = self.doping
-        phi = self.solve_poisson(rho_prev)
 
-        while error > tolerance:
+        phi = np.zeros(self.N)
+        if band_init is None:
+            phi = self.solve_poisson(rho_prev)
+        else:
+            phi = -(band_init - self.CBO - self.band_offset)/q_e
+        delta_phi = np.zeros(self.N)
+
+        while True:
             rho = self.solve_charge_dos(phi)
-            trial_error = (rho_prev - rho)
-            matrix = -self.pois_matrix + np.diag(-q_e * self.solve_delta_charge(phi))
-            delta_phi = np.linalg.solve(matrix, -trial_error)
-            phi = phi + delta_phi
-            error = np.sum(np.abs(trial_error))
+            trial_error = self.pois_matrix.dot(phi) - rho
+            error = np.abs(trial_error)
 
-        print('error: ', error)
+            if np.all(error < tolerance):
+                break
+
+            matrix = -self.pois_matrix + np.diag(q_e * self.solve_delta_charge(phi))
+            delta_phi = np.linalg.solve(matrix, trial_error)
+
+            phi = delta_phi + phi
+
+            #band = -q_e * phi + self.band_offset + self.CBO
+            #psi, energies = self.solve_schrodinger(band)
+            #plotter.plot_distributions(self.grid, band, psi, energies, rho)
+
         band = -q_e * phi + self.band_offset + self.CBO
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho

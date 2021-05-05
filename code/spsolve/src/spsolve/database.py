@@ -13,23 +13,26 @@ q_e = 1  # elementary charge
 
 
 def _get_property(property, material, x=0):
-    if material in materialproperty:
-        return materialproperty[material][property]
+    if material in scproperty:
+        return scproperty[material][property]
     elif material in alloyproperty:
         material1 = alloyproperty[material]["material1"]
         material2 = alloyproperty[material]["material2"]
 
-        prop1 = materialproperty[material1][property]
-        prop2 = materialproperty[material2][property]
+        prop1 = scproperty[material1][property]
+        prop2 = scproperty[material2][property]
 
         if property in alloyproperty[material]:
             bowing = alloyproperty[material][property]
         else:
             bowing = 0
-
         return x * prop1 + (1 - x) * prop2 - x * (1 - x) * bowing
+    elif material in metalproperty:
+        return metalproperty[material][property]
+    elif material in dielectricproperty:
+        return dielectricproperty[material][property]
     else:
-        raise MaterialNotFound
+        raise print('Material not found :(')
 
 
 def get_m_e(material, x=0):
@@ -51,7 +54,24 @@ def get_band_offset(material, x=0):
 
 
 # MATERIAL PROPERTIES
-materialproperty = {
+dielectricproperty = {
+    'SiNx':{
+        'm_e': .45,
+        'VBO': 0,
+        'Eg': 3,
+        'epsilonStatic': 4.65,
+    },
+}
+
+metalproperty = {
+    'Al':{
+        'm_e': 1,
+        'E_f': 11.7, # eV
+        'W': 4.08, # eV workfunction
+    },
+}
+
+scproperty = {
     "GaAs": {
         "m_e": 0.067,
         "epsilonStatic": 12.90,  # dielectric constant
@@ -61,13 +81,13 @@ materialproperty = {
     "AlAs": {"m_e": 0.15, "epsilonStatic": 10.06, "Eg": 3.099, "VBO": -1.33,},
     "InAs": {"m_e": 0.027, "epsilonStatic": 15.15, "Eg": 0.417, "VBO": -0.59,},
     "AlSb": {"m_e": 0.14, "epsilonStatic": 10.9, "Eg": 2.386, "VBO": -0.41,},
-    "InSb": {"m_e": 0.0135, "epsilonStatic": 16.8, "Eg": 0.235, "VBO": 0,},
+    "InSb": {"m_e": 0.018, "epsilonStatic": 16.8, "Eg": 0.235, "VBO": 0,},
 }
 
 # ALLOY PROPERTIES
 alloyproperty = {
     "AlGaAs": {"material1": "AlAs", "material2": "GaAs", "Eg": 0.37,},
-    "GaInAs": {"material1": "GaAs", "material2": "InAs", "Eg": 0.415, "m_e": 0.0092},
+    "GaInAs": {"material1": "GaAs", "material2": "InAs", "Eg": 0.415, "m_e": 0.0092,},
     "InSbAs": {"material1": "InAs", "material2": "InSb", "Eg": 0.067, "m_e": 0.035,},
     "AlInSb": {"material1": "AlSb", "material2": "InSb", "Eg": 0.43,},
 }
