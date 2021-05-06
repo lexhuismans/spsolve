@@ -284,6 +284,24 @@ class StackedLayers:
         return q_e * self._solve_charge(phi, fermi_dirac)
 
     def solve_snider(self, band_init=None):
+        def adjust_rho(rho):
+            adj_rho = rho.copy()
+            # Adjust rho for boundaries
+            if self.bound_left[0]:
+                # Dirichlet
+                adj_rho[0] += self.epsilon[0] * (self.bound_left[1]) / self.dl ** 2
+            else:
+                # Neumann
+                adj_rho[0] += -2 * self.bound_left[1] * self.epsilon[0] / self.dl
+
+            if self.bound_right[0]:
+                # Dirichlet
+                adj_rho[-1] += self.epsilon[-1] * (self.bound_right[1]) / self.dl ** 2
+            else:
+                # Neumann
+                adj_rho[-1] += 2 * self.bound_right[1] * self.epsilon[-1] / self.dl
+            return adj_rho
+
         error = np.ones(self.N)
         tolerance = 1e-6
 
@@ -298,7 +316,7 @@ class StackedLayers:
 
         while True:
             rho = self.solve_charge_dos(phi)
-            trial_error = self.pois_matrix.dot(phi) - rho
+            trial_error = self.pois_matrix.dot(phi) - adjust_rho(rho)
             error = np.abs(trial_error)
 
             if np.all(error < tolerance):
