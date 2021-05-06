@@ -13,23 +13,26 @@ q_e = 1  # elementary charge
 
 
 def _get_property(property, material, x=0):
-    if material in materialproperty:
-        return materialproperty[material][property]
+    if material in scproperty:
+        return scproperty[material][property]
     elif material in alloyproperty:
         material1 = alloyproperty[material]["material1"]
         material2 = alloyproperty[material]["material2"]
 
-        prop1 = materialproperty[material1][property]
-        prop2 = materialproperty[material2][property]
+        prop1 = scproperty[material1][property]
+        prop2 = scproperty[material2][property]
 
         if property in alloyproperty[material]:
             bowing = alloyproperty[material][property]
         else:
             bowing = 0
-
         return x * prop1 + (1 - x) * prop2 - x * (1 - x) * bowing
+    elif material in metalproperty:
+        return metalproperty[material][property]
+    elif material in dielectricproperty:
+        return dielectricproperty[material][property]
     else:
-        raise MaterialNotFound
+        print('Material ' + material + ' not found :(')
 
 
 def get_m_e(material, x=0):
@@ -49,9 +52,26 @@ def get_band_offset(material, x=0):
     Eg = _get_property("Eg", material, x)
     return VBO + Eg
 
+# MATERIAL PROPERTIES
+dielectricproperty = {
+    'SiNx':{
+        'm_e': .45,
+        'VBO': 0,
+        'Eg': 3,
+        'epsilonStatic': 4.65,
+    },
+}
+
+metalproperty = {
+    'Al':{
+        'm_e': 1,
+        'E_f': 11.7, # eV
+        'W': 4.08, # eV workfunction
+    },
+}
 
 # MATERIAL PROPERTIES
-materialproperty = {
+scproperty = {
     "GaAs": {
         "m_e": 0.067,
         "epsilonStatic": 12.90,  # dielectric constant

@@ -297,7 +297,6 @@ class StackedLayers:
             self_consistent, band_init, method="anderson", options=dict(fatol=1e-3)
         )
         band = optim_result.x
-        print(optim_result.nit)
         rho = self.solve_charge_dos(band)
         transverse_modes, energies = self.solve_schrodinger(band)
 
