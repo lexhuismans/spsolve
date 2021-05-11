@@ -74,8 +74,8 @@ metalproperty = {
 scproperty = {
     "GaAs": {
         "m_e": 0.067,
-        "epsilonStatic": 12.90,  # dielectric constant
-        "Eg": 1.519,  # (eV) Fundamental energy gap
+        "epsilonStatic": 13.10,  # dielectric constant
+        "Eg": 1.420,  # (eV) Fundamental energy gap
         "VBO": -0.80,  # (eV)
     },
     "AlAs": {"m_e": 0.15, "epsilonStatic": 10.06, "Eg": 3.099, "VBO": -1.33,},
