@@ -258,7 +258,7 @@ class StackedLayers:
         if band_init is None:
             phi_init = self.solve_poisson(np.zeros(self.N))
         else:
-            phi_init = -(band_init - self.CBO - self.band_offset)/q_e
+            phi_init = -(band_init - self.band_offset)/q_e
 
         optim_result = optimize.root(
             self_consistent, phi_init, method="anderson"  # , options=dict(maxiter=3)
@@ -266,12 +266,12 @@ class StackedLayers:
 
         phi = optim_result.x
         rho = self.solve_charge_dos(phi)
-        band = -q_e * phi + self.band_offset + self.CBO
+        band = -q_e * phi + self.band_offset
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
 
     def _solve_charge(self, phi, fd_func):
-        band = -q_e * phi + self.band_offset + self.CBO
+        band = -q_e * phi + self.band_offset
         ks = np.linspace(0, 1, 1000)
         dk = ks[1]
         n_e = np.zeros(self.N)
@@ -301,7 +301,7 @@ class StackedLayers:
     def solve_delta_charge(self, phi):
         # Approximate DOS
         if True:  # self.T == 0:
-            band = -q_e * phi + self.band_offset + self.CBO
+            band = -q_e * phi + self.band_offset
             n_e = np.zeros(self.N)
             n_modes = 21
 
@@ -311,7 +311,7 @@ class StackedLayers:
             n_e += self.m_e / math.pi / h_bar**2 * np.dot(inner_product, fd)
             return -q_e * n_e
         elif self.T == 0:  # Integrate DOS
-            band = -q_e * phi + self.band_offset + self.CBO
+            band = -q_e * phi + self.band_offset
             ks = np.linspace(0, 1, 1000)
             dk = ks[1]
             n_e = np.zeros(self.N)
@@ -364,7 +364,7 @@ class StackedLayers:
         if band_init is None:
             phi = self.solve_poisson(rho_prev)
         else:
-            phi = -(band_init - self.CBO - self.band_offset)/q_e
+            phi = -(band_init - self.band_offset)/q_e
         delta_phi = np.zeros(self.N)
 
         while True:
@@ -380,7 +380,7 @@ class StackedLayers:
 
             phi = delta_phi + phi
 
-        band = -q_e * phi + self.band_offset + self.CBO
+        band = -q_e * phi + self.band_offset
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
 
@@ -438,6 +438,15 @@ class StackedLayers:
         self.schrod_stop = int(x1)
         self.__schrod_where = (self.grid[x0], self.grid[x1])
         self.make_system()
+
+    @property
+    def CBO(self):
+        return self.__CBO
+
+    @CBO.setter
+    def CBO(self, CBO):
+        self.band_offset = self.band_offset + self.CBO
+        self.__CBO = CBO
 
 # -----------------------Non Class Code---------------------------
 
