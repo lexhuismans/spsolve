@@ -27,16 +27,22 @@ def plot_charge(grid, rho, ax=None, rho_fit=None, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
-    ax.plot(grid, rho, label="Numerical")
+    ax.plot(grid, rho*1e21, label="Numerical")
     if not isinstance(rho_fit, type(None)):
         ax.plot(grid[1:-1], rho_fit[1:-1], label="Analytical")
         ax.legend()
 
     if ax is None:
-        _set_axis(ax, 'Position (nm)', r'Charge ($q_e/nm^3$)', **options)
+        _set_axis(ax, "Position (nm)", r"Charge ($q_e/cm^3$)", **options)
         plt.show()
     else:
-        _set_axis(ax, 'Position (nm)', r'Charge ($q_e/nm^3$)', title='Charge distribution', **options)
+        _set_axis(
+            ax,
+            "Position (nm)",
+            r"Charge ($q_e/cm^3$)",
+            title="Charge distribution",
+            **options
+        )
         return ax
 
 
@@ -47,15 +53,17 @@ def plot_band(grid, band, ax=None, **options):
     ax.plot(grid, band)
 
     if ax is None:
-        _set_axis(ax, 'Position (nm)', 'Energy (eV)', **options)
+        _set_axis(ax, "Position (nm)", "Energy (eV)", **options)
         plt.show()
     else:
-        _set_axis(ax, 'Position (nm)', 'Energy (eV)', title='Conduction band', **options)
+        _set_axis(
+            ax, "Position (nm)", "Energy (eV)", title="Conduction band", **options
+        )
         ax.set_title("Conduction band")
         return ax
 
 
-def plot_wave(grid, psi, energies, ax=None, n_waves = 3, **options):
+def plot_wave(grid, psi, energies, ax=None, n_waves=3, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
@@ -64,12 +72,18 @@ def plot_wave(grid, psi, energies, ax=None, n_waves = 3, **options):
         ax.plot(grid, psi[:, n] ** 2, label="$E_{}$ = {:f} eV".format(n, energies[n]))
 
     if ax is None:
-        _set_axis(ax, 'Position (nm)', r"$|\psi|^2 (1/nm)$")
+        _set_axis(ax, "Position (nm)", r"$|\psi|^2 (1/nm)$")
         ax.legend()
         ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         plt.show()
     else:
-        _set_axis(ax, 'Position (nm)', r"$|\psi|^2$ ($nm^{-1}$)", title=r"Probability", **options)
+        _set_axis(
+            ax,
+            "Position (nm)",
+            r"$|\psi|^2$ ($nm^{-1}$)",
+            title=r"Probability",
+            **options
+        )
         ax.legend(fontsize="xx-small", bbox_to_anchor=(1, 1))
         return ax
 
@@ -79,7 +93,7 @@ def plot_distributions(grid, band, psi, energies, rho, **options):
 
     plot_charge(grid, rho, ax[0], **options)
     plot_band(grid, band, ax[1], **options)
-    plot_wave(grid, psi, energies, ax = ax[2], **options)
+    plot_wave(grid, psi, energies, ax=ax[2], **options)
 
     fig.tight_layout()
     plt.show()
@@ -87,7 +101,7 @@ def plot_distributions(grid, band, psi, energies, rho, **options):
 
 def plot_charge_density(startV=-1, stopV=1):
     N = 200
-    layer = solver.Material('GaAs', 100)
+    layer = solver.Material("GaAs", 100)
     syst = solver.StackedLayers(0, N, (True, startV), (True, startV), layer)
 
     N_V = 100
@@ -97,8 +111,8 @@ def plot_charge_density(startV=-1, stopV=1):
     V = np.linspace(startV, stopV, N_V)
 
     for i in range(N_V):
-        V_0 = np.ones(N)*V[i]
-        band = -q_e*V_0
+        V_0 = np.ones(N) * V[i]
+        band = -q_e * V_0
         trans_modes, energies = syst.solve_schrodinger(band)
 
         rho = syst.solve_charge(trans_modes, energies)
@@ -116,9 +130,9 @@ def plot_optimize(stacked, options=None):
 
     options = dict(options)
 
-    options.setdefault('vlines', None)
-    if options['vlines'] is not None:
-        options['vlines'] = stacked.L_hj
+    options.setdefault("vlines", None)
+    if options["vlines"] is not None:
+        options["vlines"] = stacked.L_hj
 
     band, modes, energies, charge = stacked.solve_optimize()
 
@@ -127,23 +141,24 @@ def plot_optimize(stacked, options=None):
 
 def plot_varying_gate(stacked, V_gates, V_surfs, legend=True):
     def sheet_charge(rho, dl):
-        return np.sum(rho)*dl
+        return np.sum(rho) * dl
 
     for V_surf in V_surfs:
         stacked.bound_right = (True, V_surf)
         band = stacked.solve_poisson(np.zeros(stacked.N))
         rho_2d = np.zeros(len(V_gates))
         for i in np.arange(len(V_gates)):
+            print(i)
             stacked.bound_left = (True, V_gates[i])
             stacked.bound_right = (True, V_gates[i])
-            band, _, _, rho = stacked.solve_optimize(band)
+            band, _, _, rho = stacked.solve_snider(band)
             rho_2d[i] = sheet_charge(rho, stacked.dl)
 
-        label = '$V_{surf}$' + ' {} V'.format(V_surf)
+        label = "$V_{surf}$" + " {} V".format(V_surf)
         plt.plot(V_gates, rho_2d, label=label)
 
-    plt.xlabel(r'$V_{0}$ (V)')
-    plt.ylabel(r'$\rho_{sheet} (q_e/nm^{2}$)')
+    plt.xlabel(r"$V_{0}$ (V)")
+    plt.ylabel(r"$\rho_{sheet} (q_e/nm^{2}$)")
     if legend:
         plt.legend()
     plt.show()

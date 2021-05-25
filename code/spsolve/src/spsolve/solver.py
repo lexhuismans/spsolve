@@ -4,11 +4,11 @@ from collections import namedtuple
 import numpy as np
 
 import kwant
+import semicon
 from scipy import optimize
 from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve
 
-from . import database
-from . import plotter
+from . import database, plotter
 
 # Physical constants
 k_b = database.k_b
@@ -30,7 +30,8 @@ def fermi_dirac(E_f, E, T):
 def fermi_dirac_int(E_F, E, T):
     """
     Computes the integral of the Fermi-Dirac distribution. Trapezoidal integration.
-    (As is needed forthe number of electrons in a subband (n) with a two dimensional DOS)
+    (As is needed forthe number of electrons in a subband (n) with a two dimensional
+    DOS)
     """
     if T == 0:
         below_fermi = E < E_F
@@ -47,16 +48,16 @@ def fermi_dirac_int(E_F, E, T):
 
 
 def fermi_dirac_der(E_F, E, T):
-    if T > 400:
-        exp = np.exp((E - E_F)/(k_b * T))
-        return - exp / (1 + exp)**2 * 1 / (k_b*T)
+    if T > 200:
+        exp = np.exp((E - E_F) / (k_b * T))
+        return -exp / (1 + exp) ** 2 * 1 / (k_b * T)
     else:
-        T = 400
-        exp = np.exp((E - E_F)/(k_b * T))
+        T = 200
+        exp = np.exp((E - E_F) / (k_b * T))
         if not np.isfinite(exp).all():
             return np.zeros(len(E))
         else:
-            fdder = - exp / (1 + exp)**2 * 1 / (k_b*T)
+            fdder = -exp / (1 + exp) ** 2 * 1 / (k_b * T)
             if not np.isfinite(fdder).all():
                 return np.zeros(len(E))
             else:
@@ -92,7 +93,6 @@ class StackedLayers:
         self.layers = layers  # Layers (tuple)
         self.T = T
         self.N = N
-        self.CBO = 0
         self.schrod_start = 0
         self.schrod_stop = N - 1
 
@@ -218,7 +218,7 @@ class StackedLayers:
 
         # ---------------------SOLVE--------------------------
         phi = lu_solve(self.pois_matrix_lu_piv, adjusted_rho)
-        #band = -q_e * phi + self.band_offset + self.CBO
+        # band = -q_e * phi + self.band_offset + self.CBO
         return phi
 
     def solve_schrodinger(self, band, n_modes=21):
@@ -252,16 +252,20 @@ class StackedLayers:
 
             # Compute error
             diff = phi_old - phi
-            #plotter.plot_distributions(self.grid, band, psi, energies, rho)
+            # plotter.plot_distributions(self.grid, band, psi, energies, rho)
+            print(np.sum(np.abs(diff)))
             return diff
 
         if band_init is None:
             phi_init = self.solve_poisson(np.zeros(self.N))
         else:
-            phi_init = -(band_init - self.band_offset)/q_e
+            phi_init = -(band_init - self.band_offset) / q_e
 
         optim_result = optimize.root(
-            self_consistent, phi_init, method="anderson"  # , options=dict(maxiter=3)
+            self_consistent,
+            phi_init,
+            method="anderson",
+            tol=1e-2,  # , options=dict(maxiter=3)
         )
 
         phi = optim_result.x
@@ -272,7 +276,7 @@ class StackedLayers:
 
     def _solve_charge(self, phi, fd_func):
         band = -q_e * phi + self.band_offset
-        ks = np.linspace(0, 1, 1000)
+        ks = np.linspace(0, 2, 8000)
         dk = ks[1]
         n_e = np.zeros(self.N)
         n_modes = 21
@@ -285,7 +289,7 @@ class StackedLayers:
             inner_product = psi ** 2
             fd = fd_func(0, energies, self.T)
 
-            n_e += 1/math.pi * np.dot(inner_product, fd) * k * dk
+            n_e += 1 / math.pi * np.dot(inner_product, fd) * k * dk
 
             # Speed up optimisation
             rel_modes = np.argwhere(fd > 1e-6)  # relevant modes
@@ -293,12 +297,12 @@ class StackedLayers:
                 break
             n_modes = int(rel_modes[-1] + 1)
 
-        return -q_e*n_e + self.doping
+        return -q_e * n_e + self.doping
 
     def solve_charge_dos(self, phi):
         return self._solve_charge(phi, fermi_dirac)
 
-    def solve_delta_charge(self, phi):
+    def matrix_delta_charge(self, phi):
         # Approximate DOS
         if True:  # self.T == 0:
             band = -q_e * phi + self.band_offset
@@ -308,8 +312,9 @@ class StackedLayers:
             psi, energies = self.solve_schrodinger(band, n_modes)
             inner_product = psi ** 2
             fd = fermi_dirac(0, energies, self.T)
-            n_e += self.m_e / math.pi / h_bar**2 * np.dot(inner_product, fd)
-            return -q_e * n_e
+            n_e = self.m_e / math.pi / h_bar ** 2 * np.dot(inner_product, fd)
+
+            return np.diag(-q_e * q_e * n_e)
         elif self.T == 0:  # Integrate DOS
             band = -q_e * phi + self.band_offset
             ks = np.linspace(0, 1, 1000)
@@ -326,7 +331,7 @@ class StackedLayers:
                 inner_product = psi ** 2
                 fd = fermi_dirac_der(0, energies, self.T)
 
-                n_e += 1/math.pi * np.dot(inner_product, fd) * k * dk
+                n_e += 1 / math.pi * np.dot(inner_product, fd) * k * dk
 
                 # Speed up optimisation
                 rel_modes = np.argwhere(energies < E_F + 1)  # relevant modes
@@ -356,7 +361,7 @@ class StackedLayers:
             return adj_rho
 
         error = np.ones(self.N)
-        tolerance = 1e-5
+        tolerance = 1e-6
 
         rho_prev = self.doping
 
@@ -364,18 +369,23 @@ class StackedLayers:
         if band_init is None:
             phi = self.solve_poisson(rho_prev)
         else:
-            phi = -(band_init - self.band_offset)/q_e
+            phi = -(band_init - self.band_offset) / q_e
         delta_phi = np.zeros(self.N)
 
+        error_prev = 10000
         while True:
             rho = self.solve_charge_dos(phi)
             trial_error = self.pois_matrix.dot(phi) - adjust_rho(rho)
             error = np.abs(trial_error)
-
+            print(np.sum(np.abs(error)))
             if np.all(error < tolerance):
                 break
+            elif error_prev < np.sum(np.abs(error)):
+                print("Oscilations -> start SciPy optimisation")
+                return self.solve_optimize(-q_e * phi + self.band_offset)
+            error_prev = np.sum(np.abs(error))
 
-            matrix = -self.pois_matrix + np.diag(q_e * self.solve_delta_charge(phi))
+            matrix = -self.pois_matrix + self.matrix_delta_charge(phi)
             delta_phi = np.linalg.solve(matrix, trial_error)
 
             phi = delta_phi + phi
@@ -383,6 +393,14 @@ class StackedLayers:
         band = -q_e * phi + self.band_offset
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
+
+    def solve_k_dot_p(self):
+
+        model = semicon.models.ZincBlende(
+            components=("foreman",),
+            parameter_coords="z",
+            default_databank="lawaetz",
+        )
 
     @property
     def bound_left(self):
@@ -432,7 +450,7 @@ class StackedLayers:
         try:
             x1 = np.argwhere(self.grid <= bounds[1])[-1]
         except IndexError:
-            x1 = self.N-1
+            x1 = self.N - 1
 
         self.schrod_start = int(x0)
         self.schrod_stop = int(x1)
@@ -445,8 +463,9 @@ class StackedLayers:
 
     @CBO.setter
     def CBO(self, CBO):
-        self.band_offset = self.band_offset + self.CBO
+        self.band_offset = self.band_offset + CBO
         self.__CBO = CBO
+
 
 # -----------------------Non Class Code---------------------------
 
@@ -625,7 +644,8 @@ def solve_schrod(phi, dl):
     energies : float
         eigen energies of the solution (eV).
     psi : float
-        wavefunctions (eigenvectors of the solution). 2D array with wavefunction for each i, psi[:,i].
+        wavefunctions (eigenvectors of the solution). 2D array with
+        wavefunction for each i, psi[:,i].
     """
     schrod_matrix = comp_schrod_matrix(phi, dl)
     energies, psi = np.linalg.eig(schrod_matrix)
