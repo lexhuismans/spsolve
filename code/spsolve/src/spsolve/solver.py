@@ -1,11 +1,14 @@
 import math
 from collections import namedtuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import kwant
+import scipy.sparse.linalg as sla
 import semicon
-from scipy import optimize
+import sympy
+from scipy import interpolate, optimize
 from scipy.linalg import eigh_tridiagonal, lu_factor, lu_solve
 
 from . import database, plotter
@@ -302,26 +305,35 @@ class StackedLayers:
     def solve_charge_dos(self, phi):
         return self._solve_charge(phi, fermi_dirac)
 
-    def matrix_delta_charge(self, phi):
+    def matrix_delta_charge(self, phi, option=0):
+        band = -q_e * phi + self.band_offset
+        n_e = np.zeros(self.N)
+        n_modes = 21
         # Approximate DOS
-        if True:  # self.T == 0:
-            band = -q_e * phi + self.band_offset
-            n_e = np.zeros(self.N)
-            n_modes = 21
-
+        if option == 0:  # self.T == 0:
             psi, energies = self.solve_schrodinger(band, n_modes)
             inner_product = psi ** 2
             fd = fermi_dirac(0, energies, self.T)
-            n_e = self.m_e / math.pi / h_bar ** 2 * np.dot(inner_product, fd)
 
+            n_e = self.m_e / math.pi / h_bar ** 2 * np.dot(inner_product, fd)
             return np.diag(-q_e * q_e * n_e)
+        elif option == 1:
+            psi, energies = self.solve_schrodinger(band, n_modes)
+            inner_product = psi ** 2
+            fd = fermi_dirac(0, energies, self.T)
+
+            fd_where = fd > 1e-5
+
+            fd_modes = inner_product[:, fd_where] * np.outer(
+                np.ones(self.N), np.sqrt(fd[fd_where])
+            )
+            matrix = np.matmul(fd_modes, fd_modes.T) * np.outer(
+                self.m_e, np.ones(self.N)
+            )
+            return -q_e * q_e / math.pi / h_bar ** 2 * matrix
         elif self.T == 0:  # Integrate DOS
-            band = -q_e * phi + self.band_offset
             ks = np.linspace(0, 1, 1000)
             dk = ks[1]
-            n_e = np.zeros(self.N)
-            n_modes = 21
-            E_F = 0
 
             for k in ks:
                 E_k = (h_bar * k) ** 2 / (2 * self.m_e)
@@ -334,11 +346,10 @@ class StackedLayers:
                 n_e += 1 / math.pi * np.dot(inner_product, fd) * k * dk
 
                 # Speed up optimisation
-                rel_modes = np.argwhere(energies < E_F + 1)  # relevant modes
+                rel_modes = np.argwhere(fd > 1e-6)  # relevant modes
                 if rel_modes.size == 0:
                     break
                 n_modes = int(rel_modes[-1] + 1)
-
             return q_e * n_e
 
     def solve_snider(self, band_init=None):
@@ -361,7 +372,7 @@ class StackedLayers:
             return adj_rho
 
         error = np.ones(self.N)
-        tolerance = 1e-6
+        tolerance = 1e-5
 
         rho_prev = self.doping
 
@@ -373,19 +384,22 @@ class StackedLayers:
         delta_phi = np.zeros(self.N)
 
         error_prev = 10000
+        option = 0
         while True:
             rho = self.solve_charge_dos(phi)
             trial_error = self.pois_matrix.dot(phi) - adjust_rho(rho)
             error = np.abs(trial_error)
-            print(np.sum(np.abs(error)))
+            # print(np.sum(np.abs(error)))
             if np.all(error < tolerance):
                 break
             elif error_prev < np.sum(np.abs(error)):
-                print("Oscilations -> start SciPy optimisation")
-                return self.solve_optimize(-q_e * phi + self.band_offset)
+                print("option: 1")
+                option = 1
+                # print("Oscilations -> start SciPy optimisation")
+                # return self.solve_optimize(-q_e * phi + self.band_offset)
             error_prev = np.sum(np.abs(error))
 
-            matrix = -self.pois_matrix + self.matrix_delta_charge(phi)
+            matrix = -self.pois_matrix + self.matrix_delta_charge(phi, option)
             delta_phi = np.linalg.solve(matrix, trial_error)
 
             phi = delta_phi + phi
@@ -394,13 +408,81 @@ class StackedLayers:
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
 
-    def solve_k_dot_p(self):
+    def solve_k_dot_p(self, band=None):
+        if band is None:
+            phi = np.zeros(self.N)
+        else:
+            phi = -(band - self.band_offset) / q_e
+
+        N_grid = 80
+        gamma_0 = 1
 
         model = semicon.models.ZincBlende(
             components=("foreman",),
             parameter_coords="z",
             default_databank="lawaetz",
         )
+
+        parameters = []
+        widths = []
+        for layer in self.layers:
+            material = layer.material
+            databank = database.get_dict(material, layer.x)
+
+            if databank is False:
+                continue
+
+            widths.append(layer.L)
+
+            parameters.append(
+                model.parameters(
+                    material,
+                    databank=databank,
+                    valence_band_offset=databank[material]["VBO"] + 0.59,
+                ).renormalize(new_gamma_0=gamma_0)
+            )
+
+        grid_spacing = np.sum(widths) / N_grid
+
+        two_deg_params, walls = semicon.misc.two_deg(
+            parameters=parameters,
+            widths=widths,
+            grid_spacing=grid_spacing,
+            extra_constants=semicon.parameters.constants,
+        )
+
+        xpos = np.arange(-2 * grid_spacing, sum(widths) + 2 * grid_spacing, 0.5)
+        semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
+
+        template = kwant.continuum.discretize(
+            model.hamiltonian + sympy.diag(*[" + V(z)"] * 8),
+            coords="z",
+            grid=grid_spacing,
+        )
+
+        shape = lambda site: 0 - grid_spacing / 2 < site.pos[0] < sum(widths)
+
+        syst = kwant.Builder()
+        syst.fill(template, shape, (0,))
+        syst = syst.finalized()
+
+        momenta = np.linspace(-0.45, 0.45, 101)
+        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+
+        energies = []
+        for k in momenta:
+            p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
+            ham = syst.hamiltonian_submatrix(params=p, sparse=False)
+            ev, evec = sla.eigsh(ham, k=20, sigma=0.52)
+            energies.append(ev)
+
+        plt.figure(figsize=(12, 8))
+
+        plt.plot(momenta, np.sort(energies))
+
+        plt.xlim(min(momenta), max(momenta))
+        plt.ylim(0.36, 0.72)
+        plt.show()
 
     @property
     def bound_left(self):
