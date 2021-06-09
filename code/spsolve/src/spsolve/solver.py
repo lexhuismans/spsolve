@@ -408,13 +408,13 @@ class StackedLayers:
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
 
-    def solve_k_dot_p(self, band=None):
+    def solve_k_dot_p(self, band=None, momenta=np.linspace(-.1, .1, 101)):
         if band is None:
             phi = np.zeros(self.N)
         else:
             phi = -(band - self.band_offset) / q_e
 
-        N_grid = 80
+        N_grid = 100
         gamma_0 = 1
 
         model = semicon.models.ZincBlende(
@@ -438,7 +438,7 @@ class StackedLayers:
                 model.parameters(
                     material,
                     databank=databank,
-                    valence_band_offset=databank[material]["VBO"] + 0.59,
+                    valence_band_offset=databank[material]["VBO"],
                 ).renormalize(new_gamma_0=gamma_0)
             )
 
@@ -451,7 +451,7 @@ class StackedLayers:
             extra_constants=semicon.parameters.constants,
         )
 
-        xpos = np.arange(-2 * grid_spacing, sum(widths) + 2 * grid_spacing, 0.5)
+        xpos = np.arange(0, sum(widths), 0.5)
         semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
 
         template = kwant.continuum.discretize(
@@ -466,23 +466,67 @@ class StackedLayers:
         syst.fill(template, shape, (0,))
         syst = syst.finalized()
 
-        momenta = np.linspace(-0.45, 0.45, 101)
-        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+        y1 = two_deg_params["E_v"](xpos)
+        y2 = y1 + two_deg_params["E_0"](xpos)
+        V_z = interpolate.interp1d(
+            self.grid, -q_e * phi - min(y2) + self.CBO, fill_value="extrapolate"
+        )  # Adjust such that it matches optimisation
 
-        energies = []
-        for k in momenta:
+        sigma = min(y2 + V_z(xpos))
+        N_sols = 20
+
+        def eigh_interval(k, levels=N_sols):
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
-            ham = syst.hamiltonian_submatrix(params=p, sparse=False)
-            ev, evec = sla.eigsh(ham, k=20, sigma=0.52)
-            energies.append(ev)
+            ham = syst.hamiltonian_submatrix(params=p, sparse=True)
+            ev, evec = sla.eigsh(ham, k=N_sols, sigma=sigma)
+            ind = np.argsort(abs(ev))[:levels]
+            return ev[ind], evec[:, ind]
+
+        e, psi = eigh_interval(momenta[0])
+        sorted_levels = [e]
+        for x in momenta[1:]:
+            e2, psi2 = eigh_interval(x)
+            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
+            assignment = optimize.linear_sum_assignment(-Q)[1]
+            sorted_levels.append(e2[assignment])
+            psi = psi2[:, assignment]
 
         plt.figure(figsize=(12, 8))
 
-        plt.plot(momenta, np.sort(energies))
+        plt.plot(momenta, sorted_levels)
 
         plt.xlim(min(momenta), max(momenta))
-        plt.ylim(0.36, 0.72)
+        plt.xlabel("$k_x$")
+        plt.ylabel("Energy (eV)")
         plt.show()
+
+        return momenta, sorted_levels
+
+    def solve_spin_orbit(self, band=None):
+        momenta, sorted_levels = self.solve_k_dot_p(band)
+
+        # Find shift in band minima
+        shifts = []
+        N_sols = len(sorted_levels[0])
+        for i in np.arange(0, N_sols, 2):
+            cband1 = interpolate.interp1d(
+                momenta, [e[i] for e in sorted_levels], kind="quadratic"
+            )
+            cband2 = interpolate.interp1d(
+                momenta, [e[i + 1] for e in sorted_levels], kind="quadratic"
+            )
+
+            # Find minima
+            sol1 = optimize.minimize(cband1, 0)
+            sol2 = optimize.minimize(cband2, 0)
+
+            # Break if above Fermi energy
+            if cband1(sol1.x) > 0:
+                continue
+            else:
+                shifts.append(abs(sol1.x - sol2.x)[0])
+
+        return shifts
 
     @property
     def bound_left(self):
