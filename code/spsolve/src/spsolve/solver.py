@@ -1,8 +1,10 @@
 import math
+import os
 from collections import namedtuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 
 import kwant
 import scipy.sparse.linalg as sla
@@ -111,6 +113,7 @@ class StackedLayers:
         ) = self._set_properties(layers)
 
         self.band_offset = self.band_offset - np.amin(self.band_offset)
+        self.CBO = 0
 
         self.dl = self.grid[0]
 
@@ -200,7 +203,7 @@ class StackedLayers:
 
     def solve_poisson(self, rho):
         """
-        Solve the Poisson equation non-uniform mesh.
+        Solve the Poisson equation.
         """
         adjusted_rho = rho.copy()
 
@@ -247,6 +250,11 @@ class StackedLayers:
         return full_waves, energies
 
     def solve_optimize(self, band_init=None):
+        """
+        Find the self-consistent solution of the stack using the scipy root
+        optimisation.
+        """
+
         def self_consistent(phi):
             phi_old = phi.copy()
 
@@ -306,6 +314,14 @@ class StackedLayers:
         return self._solve_charge(phi, fermi_dirac)
 
     def matrix_delta_charge(self, phi, option=0):
+        """
+        Compute the matrix that computes the charge difference in the predictor-
+        corrector approach in solve_snider().
+        Option 0 uses an approximation.
+        Option 1 actually computes the innerproduct, but due to matrix multiplications
+            this is relatively slow.
+        There is also the case of integrating over k for the density of states.
+        """
         band = -q_e * phi + self.band_offset
         n_e = np.zeros(self.N)
         n_modes = 21
@@ -353,6 +369,10 @@ class StackedLayers:
             return q_e * n_e
 
     def solve_snider(self, band_init=None):
+        """
+        Optimize as is described in the Snider paper. This is a predictor-corrector style approach.
+        """
+
         def adjust_rho(rho):
             adj_rho = rho.copy()
             # Adjust rho for boundaries
@@ -408,7 +428,9 @@ class StackedLayers:
         psi, energies = self.solve_schrodinger(band)
         return band, psi, energies, rho
 
-    def solve_k_dot_p(self, band=None, momenta=np.linspace(-.1, .1, 101)):
+    def solve_k_dot_p(
+        self, band=None, momenta=np.linspace(-0.055, 0.055, 101), savefig=False
+    ):
         if band is None:
             phi = np.zeros(self.N)
         else:
@@ -442,7 +464,7 @@ class StackedLayers:
                 ).renormalize(new_gamma_0=gamma_0)
             )
 
-        grid_spacing = np.sum(widths) / N_grid
+        grid_spacing = 0.5  # np.sum(widths) / N_grid
 
         two_deg_params, walls = semicon.misc.two_deg(
             parameters=parameters,
@@ -452,10 +474,24 @@ class StackedLayers:
         )
 
         xpos = np.arange(0, sum(widths), 0.5)
-        semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
+        # Add potential and shift
+        def add_curves(a, b):
+            def compute(x):
+                return a(x) + b(x)
 
+            return compute
+
+        y1 = two_deg_params["E_v"](xpos)
+        y2 = y1 + two_deg_params["E_0"](xpos)
+        V_z = interpolate.interp1d(
+            self.grid, -q_e * phi - min(y2) + self.CBO, fill_value="extrapolate"
+        )  # Adjust such that it matches optimisation
+        two_deg_params["E_v"] = add_curves(two_deg_params["E_v"], V_z)
+
+        # Make system
+        # semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
         template = kwant.continuum.discretize(
-            model.hamiltonian + sympy.diag(*[" + V(z)"] * 8),
+            model.hamiltonian,
             coords="z",
             grid=grid_spacing,
         )
@@ -466,12 +502,7 @@ class StackedLayers:
         syst.fill(template, shape, (0,))
         syst = syst.finalized()
 
-        y1 = two_deg_params["E_v"](xpos)
-        y2 = y1 + two_deg_params["E_0"](xpos)
-        V_z = interpolate.interp1d(
-            self.grid, -q_e * phi - min(y2) + self.CBO, fill_value="extrapolate"
-        )  # Adjust such that it matches optimisation
-
+        # Find and sort solutions
         sigma = min(y2 + V_z(xpos))
         N_sols = 20
 
@@ -491,42 +522,98 @@ class StackedLayers:
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
 
-        plt.figure(figsize=(12, 8))
+        if savefig:
+            plt.figure(figsize=(12, 8))
 
-        plt.plot(momenta, sorted_levels)
+            plt.plot(momenta, sorted_levels)
 
-        plt.xlim(min(momenta), max(momenta))
-        plt.xlabel("$k_x$")
-        plt.ylabel("Energy (eV)")
-        plt.show()
+            plt.xlim(min(momenta), max(momenta))
+            plt.xlabel("$k_x$")
+            plt.ylabel("Energy (eV)")
 
+            filename = "figures/dispersion/"
+            i = 0
+            while True:
+                i += 1
+                newname = "{}{:d}.png".format(filename, i)
+                if os.path.exists(newname):
+                    continue
+                plt.savefig(newname)
+                break
         return momenta, sorted_levels
 
     def solve_spin_orbit(self, band=None):
+        """
+        Solve k.p using semicon (solve_k_dot_p()) and from this band structure
+        extract the shift in k.
+
+        Parameters
+        ----------
+        band : array (float)
+            array with conduction band energy. Default is None.
+
+        Returns
+        -------
+        shifts : numpy array
+            absolute shift of bands below 0 Fermi energy in k-space. Shift is from 0 -> 2xshift is distance
+            in k between minima.
+        rashba : numpy array
+            rashba parameters for all bands below 0 Fermi energy.
+        """
+        if band is None:
+            band = self.band_offset
+
         momenta, sorted_levels = self.solve_k_dot_p(band)
 
         # Find shift in band minima
-        shifts = []
         N_sols = len(sorted_levels[0])
-        for i in np.arange(0, N_sols, 2):
-            cband1 = interpolate.interp1d(
-                momenta, [e[i] for e in sorted_levels], kind="quadratic"
+        ks = np.array([])
+        es = np.array([])
+        cbands = np.array([])
+        for i in np.arange(0, N_sols):
+            cband = interpolate.interp1d(
+                momenta,
+                [e[i] for e in sorted_levels],
+                kind="quadratic",
+                fill_value="extrapolate",
             )
-            cband2 = interpolate.interp1d(
-                momenta, [e[i + 1] for e in sorted_levels], kind="quadratic"
-            )
+
+            # Check conduction band
+            p = np.polyfit(momenta, cband(momenta), 2)
+            if p[0] < 0 or cband(0) < min(band):
+                continue
 
             # Find minima
-            sol1 = optimize.minimize(cband1, 0)
-            sol2 = optimize.minimize(cband2, 0)
+            sol = optimize.minimize(cband, 0)
 
             # Break if above Fermi energy
-            if cband1(sol1.x) > 0:
+            if cband(sol.x) > 4:
                 continue
             else:
-                shifts.append(abs(sol1.x - sol2.x)[0])
+                ks = np.append(ks, sol.x)
+                es = np.append(es, cband(sol.x))
+                cbands = np.append(cbands, cband)
 
-        return shifts
+        argsort = np.argsort(es)
+        ks = ks[argsort].reshape(-1, 2)
+        es = es[argsort].reshape(-1, 2)
+        print(ks)
+        print(es)
+        cbands = cbands[argsort].reshape(-1, 2)
+
+        # Compute E_R (Rashba energy)
+        e_R = np.array([])
+        for i in range(cbands.shape[0]):
+            e_R = np.append(e_R, cbands[i, 0](0) - es[i, 0])
+
+        shifts = np.array(abs(ks[:, 0] - ks[:, -1]) / 2)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error")
+            try:
+                rashba = 2 * e_R / shifts
+            except RuntimeWarning:
+                rashba = np.zeros(len(shifts))
+        return shifts, rashba
 
     @property
     def bound_left(self):
