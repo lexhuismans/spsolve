@@ -8,6 +8,7 @@ import warnings
 
 import kwant
 import scipy.sparse.linalg as sla
+import scipy.linalg as la
 import semicon
 import sympy
 from scipy import interpolate, optimize
@@ -439,6 +440,54 @@ class StackedLayers:
         N_grid = 100
         gamma_0 = 1
 
+        def check_spurious(mat, dat, renormalize=True):
+            """
+            Check if there are spurious solutions in bulk.
+            """
+            a = 0.5
+
+            model = semicon.models.ZincBlende(
+                components=["foreman"], default_databank="lawaetz"
+            )
+
+            if renormalize:
+                params = model.parameters(
+                    mat,
+                    databank=dat,
+                ).renormalize(new_gamma_0=gamma_0)
+            else:
+                params = model.parameters(
+                    mat,
+                    databank=dat,
+                )
+            # define continuum dispersion function
+            continuum = kwant.continuum.lambdify(str(model.hamiltonian), locals=params)
+
+            # define tight-binding dispersion function
+            template = kwant.continuum.discretize(model.hamiltonian, grid=a)
+            syst = kwant.wraparound.wraparound(template).finalized()
+            p = lambda k_x, k_y, k_z: {"k_x": k_x, "k_y": k_y, "k_z": k_z, **params}
+            tb = lambda k_x, k_y, k_z: syst.hamiltonian_submatrix(
+                params=p(k_x, k_y, k_z)
+            )
+
+            # get dispersions
+            N_k = 50
+            k = np.linspace(-np.pi / a, np.pi / a, N_k * 2 + 1)
+            e = np.array([la.eigvalsh(continuum(k_x=ki, k_y=0, k_z=0)) for ki in k])
+            e_tb = np.array([la.eigvalsh(tb(k_x=a * ki, k_y=0, k_z=0)) for ki in k])
+
+            gap_low = e_tb[:, 5][N_k]
+            for i in np.arange(e_tb.shape[1] - 2):
+                if max(e_tb[:, i]) > gap_low:
+                    return True
+
+            if min(e_tb[:, -1]) < e_tb[:, -1][N_k]:
+                return True
+            elif min(e_tb[:, -2]) < e_tb[:, -2][N_k]:
+                return True
+            return False
+
         model = semicon.models.ZincBlende(
             components=("foreman",),
             parameter_coords="z",
@@ -455,14 +504,22 @@ class StackedLayers:
                 continue
 
             widths.append(layer.L)
-
-            parameters.append(
-                model.parameters(
-                    material,
-                    databank=databank,
-                    valence_band_offset=databank[material]["VBO"],
-                ).renormalize(new_gamma_0=gamma_0)
-            )
+            if check_spurious(material, databank):
+                parameters.append(
+                    model.parameters(
+                        material,
+                        databank=databank,
+                        valence_band_offset=databank[material]["VBO"],
+                    )
+                )
+            else:
+                parameters.append(
+                    model.parameters(
+                        material,
+                        databank=databank,
+                        valence_band_offset=databank[material]["VBO"],
+                    ).renormalize(new_gamma_0=gamma_0)
+                )
 
         grid_spacing = 0.5  # np.sum(widths) / N_grid
 
@@ -540,6 +597,7 @@ class StackedLayers:
                     continue
                 plt.savefig(newname)
                 break
+            plt.show()
         return momenta, sorted_levels
 
     def solve_spin_orbit(self, band=None):
