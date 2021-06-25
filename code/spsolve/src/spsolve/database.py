@@ -44,6 +44,11 @@ def get_band_offset(material, x=0):
     return VBO + E_0
 
 
+def get_VBO(material, x=0):
+    VBO = _get_property("VBO", material, x)
+    return VBO
+
+
 def _get_property(property, material, x=0):
     if material in scproperty:
         return scproperty[material][property]
