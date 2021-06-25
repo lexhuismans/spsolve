@@ -646,7 +646,7 @@ class StackedLayers:
         # Make system
         # semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
         template = kwant.continuum.discretize(
-            model.hamiltonian,
+            model.hamiltonian + sympy.diag(*[" + V(z)"] * 8),
             coords="z",
             grid=grid_spacing,
         )
