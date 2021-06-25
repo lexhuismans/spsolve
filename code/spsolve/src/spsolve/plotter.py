@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 import numpy as np
 
 from . import solver
@@ -124,6 +125,34 @@ def plot_charge_density(startV=-1, stopV=1):
     plt.show()
 
 
+def plot_wave_band(grid, band, modes, energies):
+    # FIGURE
+    fig = plt.figure(figsize=(10, 4))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 7])
+
+    ax = plt.subplot(gs[1])
+    ax.plot(grid, band, color='k', label='Band')
+    ax.set_xlabel("Position (nm)")
+    ax.set_ylabel("Energy (eV)")
+    ax.legend(loc=2)
+
+    ax1 = ax.twinx()
+    i = 0
+    while energies[i] < 0 and i < len(energies):
+        ax1.plot(grid, modes[:, i], label="$E_{:d} = {:3f}$".format(i + 1, energies[i]))
+        i += 1
+    ax1.legend(loc=3)
+    ax1.set_ylabel("$\psi$ ($1/\sqrt{nm}$)")
+
+    n_E = 5
+    ax2 = plt.subplot(gs[0])
+    ax2.scatter(np.zeros(n_E), energies[0:n_E], marker='.', color='k')
+    ax2.yaxis.tick_right()
+    ax2.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    fig.tight_layout()
+    plt.show()
+
 def plot_optimize(stacked, options=None):
     if options is None:
         options = {}
@@ -137,6 +166,38 @@ def plot_optimize(stacked, options=None):
     band, modes, energies, charge = stacked.solve_optimize()
 
     plot_distributions(stacked.grid, charge, band, modes, energies, **options)
+
+
+def plot_energies(grid, band, modes, energies):
+    # FIGURE
+    fig = plt.figure(figsize=(10, 4))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 7])
+
+    ax = plt.subplot(gs[1])
+    ax.plot(grid, band, color='k', label='Band')
+    ax.set_xlabel("Position (nm)")
+    ax.set_ylabel("Energy (eV)")
+    ax.legend(loc=2)
+
+    ax1 = ax.twinx()
+    i = 0
+    while True:
+        ax1.plot(grid, modes[:, i], label="$E_{:d} = {:3f}$".format(i + 1, energies[i]))
+        i += 1
+        if not(energies[i] < 0 and i < len(energies)):
+            break
+
+    ax1.legend(loc=3)
+    ax1.set_ylabel("$\psi$ ($1/\sqrt{nm}$)")
+
+    n_E = 5
+    ax2 = plt.subplot(gs[0])
+    ax2.scatter(np.zeros(n_E), energies[0:n_E], marker='.', color='k')
+    ax2.yaxis.tick_right()
+    ax2.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+
+    fig.tight_layout()
+    plt.show()
 
 
 def plot_varying_gate(stacked, V_gates, V_surfs, legend=True):
