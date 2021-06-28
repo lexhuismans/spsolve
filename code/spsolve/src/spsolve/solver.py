@@ -98,7 +98,7 @@ class StackedLayers:
     def __init__(self, T, N, bound_left, bound_right, *layers):
         self.layers = layers  # Layers (tuple)
         self.T = T
-        self.N = N
+        self.N = int(N)
         self.schrod_start = 0
         self.schrod_stop = N - 1
 
@@ -638,7 +638,7 @@ class StackedLayers:
             self.grid, -q_e * phi - min(y2) + self.CBO, fill_value="extrapolate"
         )  # Adjust such that it matches optimisation
         # two_deg_params["E_v"] = add_curves(two_deg_params["E_v"], V_z)
-        print(V_z(xpos))
+
         # What energy to look for modes
         if sigma is None:
             sigma = min(y2 + V_z(xpos))
