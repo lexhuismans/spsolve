@@ -705,7 +705,7 @@ class StackedLayers:
         def eigh_interval(k, sigma, levels=N_sols):
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
             ham = syst.hamiltonian_submatrix(params=p, sparse=True)
-            ev, evec = sla.eigsh(ham, k=N_sols, sigma=sigma)
+            ev, evec = sla.eigsh(ham, k=int(ham.shape[0] / 4 + 2), which="LA")
             ind = np.argsort(ev)[:levels]
             return ev[ind], evec[:, ind]
 
@@ -769,7 +769,7 @@ class StackedLayers:
         else:
             return rashbas[:, 0]
 
-    def solve_charge_k_dot_p(self, phi, sigma, N_layers="all"):
+    def solve_charge_k_dot_p(self, phi, N_layers="all"):
         """
         Compute the charge distribution integrating over k-space for the
         electron density using k.p instead of plain Schrodinger.
@@ -794,67 +794,35 @@ class StackedLayers:
         ks = np.linspace(0, 2, 8000)
         dk = ks[1]
         n_e = np.zeros(self.N)
-        N_modes = 21
 
         V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
 
-        # Find and sort solutions
-        def eigh_interval(k, sigma):
+        for k in ks:
+            # Find eigenvalues/vectors
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
             ham = syst.hamiltonian_submatrix(params=p, sparse=True)
-            ev, evec = sla.eigsh(ham, k=N_modes, sigma=sigma)
-            ind = np.argsort(ev)[:N_modes]
-            return ev[ind], evec[:, ind]
+            ev, evec = sla.eigsh(ham, k=int(ham.shape[0] / 4), which="LA")
 
-        # -----------------------
-        # -CHECK CONDUCTION BAND-
-        # -----------------------
-        e, psi = eigh_interval(ks[0], sigma)
-        sorted_levels = [e]
-        m_avg = np.average(self.m_c)
-        # Get a few values
-        for k in ks[1:10]:
-            e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
-            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
-            assignment = optimize.linear_sum_assignment(-Q)[1]
-            sorted_levels.append(e2[assignment])
-            psi = psi2[:, assignment]
-        print(e2)
-        # Fit to polynomial
-        isrelband = np.zeros(N_modes, dtype=int)
-        for i in np.arange(len(sorted_levels)):
-            band = [e[i] for e in sorted_levels]
-
-            p, res, _, _, _ = np.polyfit(ks[:10], band, 2, full=True)
-            if p[0] > 0 and res < 1e-4:
-                isrelband[i] = 1
-
-        # -------------------------------------
-        # -INTEGRATE OVER k FOR CHARGE DENSITY-
-        # -------------------------------------
-        e, psi = eigh_interval(ks[0], sigma)
-        print(isrelband)
-        for k in ks:
-            e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
-            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
-            assignment = optimize.linear_sum_assignment(-Q)[1]
-            e2 = e2[assignment][isrelband]
-            psi = psi2[:, assignment][:, isrelband]
+            # Sort
+            ind = np.argsort(ev)
+            ev = ev[ind]
+            evec = evec[:, ind]
 
             # Sum over all modes
-            for i in np.arange(len(e2)):
-                fd = fermi_dirac(0, e2[i], self.T)
+            if fermi_dirac(0, ev[0], self.T) < 1e-6 and ev[0] > 0.05:
+                break
+
+            for i in np.arange(len(ev)):
+                fd = fermi_dirac(0, ev[i], self.T)
                 ch_dens = interpolate.interp1d(
-                    np.linspace(0, self.L, len(dens(psi[:, i]))),
-                    dens(psi[:, i]),
+                    np.linspace(0, self.L, len(dens(evec[:, i]))),
+                    dens(evec[:, i]),
                     fill_value="extrapolate",
                 )
                 n_e += 1 / (2 * math.pi) * ch_dens(self.grid) * fd * k * dk
-                if fd < 1e-6:
-                    isrelband[i] = 0
 
-            if np.all(isrelband == 0):
-                break
+                if fd < 1e-6:
+                    break
 
         rho = -q_e * n_e + self.doping
         return rho
