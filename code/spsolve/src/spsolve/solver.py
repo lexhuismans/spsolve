@@ -99,8 +99,6 @@ class StackedLayers:
         self.layers = layers  # Layers (tuple)
         self.T = T
         self.N = int(N)
-        self._schrod_start = 0
-        self._schrod_stop = N
 
         # PROPERTIES
         (
@@ -116,12 +114,22 @@ class StackedLayers:
         self.band_offset = self.band_offset - np.amin(self.band_offset)
         self.__CBO = 0
 
+        self._schrod_start = 0
+        self._schrod_stop = N
+        self.__schrod_where = (0, self.L)
+
         self.dl = self.grid[0]
 
         self.DOS = self.m_c / (math.pi * h_bar ** 2)  # Density of States
 
         self.make_pois_matrix(bound_left, bound_right)
         self.make_system()
+
+    def which_layer(self, z):
+        """
+        Return layer index of z.
+        """
+        return np.argwhere(z <= self.L_hj[1::])[0]
 
     def make_pois_matrix(self, bound_left, bound_right):
         """
@@ -278,7 +286,7 @@ class StackedLayers:
 
         # Add zeros to modes
         full_waves = np.zeros((self.N, transverse_modes.shape[1]))
-        full_waves[self._schrod_start : self._schrod_stop + 1, :] = transverse_modes
+        full_waves[self._schrod_start : self._schrod_stop, :] = transverse_modes
         return full_waves, energies
 
     def solve_optimize(self, band_init=None):
@@ -536,17 +544,14 @@ class StackedLayers:
             return True
         return False
 
-    def solve_k_dot_p(
-        self,
-        N_layers="all",
-    ):
+    def solve_k_dot_p(self):
         """
         Solve the k.p hamiltonian.
 
         Parameters
         ----------
-        savefig : boolean
-            save the dispersions.
+        N_layers : 'all' or array
+            what layers to use. If array specify what layers.
 
         Returns
         -------
@@ -566,10 +571,12 @@ class StackedLayers:
 
         parameters = []
         widths = []
-        if N_layers == "all":
-            layers = self.layers
-        else:
-            layers = (self.layers[i] for i in N_layers)
+        ind_layers = np.arange(
+            self.which_layer(self.schrod_where[0]),
+            self.which_layer(self.schrod_where[1]) + 1,
+        )
+        layers = (self.layers[i] for i in ind_layers)
+
         for layer in layers:
             material = layer.material
             databank = database.get_dict(material, layer.x)
@@ -596,6 +603,16 @@ class StackedLayers:
                         valence_band_offset=databank[material]["VBO"],
                     ).renormalize(new_gamma_0=gamma_0)
                 )
+
+        # Adjust width first and last layer according to wave function solve range
+        widths[0] = (
+            self.L_hj[1::][self.which_layer(self.schrod_where[0])][0]
+            - self.schrod_where[0]
+        )
+        widths[-1] = (
+            self.schrod_where[1]
+            - self.L_hj[:-1][self.which_layer(self.schrod_where[1])][0]
+        )
 
         grid_spacing = 0.5
 
@@ -662,7 +679,7 @@ class StackedLayers:
         """
         return syst, two_deg_params
 
-    def solve_spin_orbit(self, sigma=None, band=None, N_layers="all"):
+    def solve_spin_orbit(self, sigma=None, band=None):
         """
         Solve k.p using semicon (solve_k_dot_p()) and from this band structure
         extract the shift in k.
@@ -683,7 +700,7 @@ class StackedLayers:
             rashba parameters for all bands below 0 Fermi energy.
         """
 
-        syst, two_deg_params = self.solve_k_dot_p(N_layers=N_layers)
+        syst, two_deg_params = self.solve_k_dot_p()
 
         if band is None:
             phi = np.zeros(self.N)
@@ -692,7 +709,9 @@ class StackedLayers:
 
         momenta = np.linspace(-0.12, 0.12, 101)
         N_sols = 20
-        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+        V_z = interpolate.interp1d(
+            self.grid - self.schrod_where[0], -q_e * phi, fill_value="extrapolate"
+        )  # Shift of grid is needed to match the k.p ham (see solve_k_dot_p())
 
         xpos = np.arange(0, self.L, 0.5)
         # What energy to look for modes
@@ -769,7 +788,7 @@ class StackedLayers:
         else:
             return rashbas[:, 0]
 
-    def solve_charge_k_dot_p(self, phi, N_layers="all"):
+    def kp_solve_charge(self, phi):
         """
         Compute the charge distribution integrating over k-space for the
         electron density using k.p instead of plain Schrodinger.
@@ -788,14 +807,19 @@ class StackedLayers:
         rho : float
             N numpy array containing the charge distribution.
         """
-        syst, two_deg_params = self.solve_k_dot_p(N_layers=N_layers)
+        syst, two_deg_params = self.solve_k_dot_p()
         dens = kwant.operator.Density(syst)
 
         ks = np.linspace(0, 2, 8000)
         dk = ks[1]
         n_e = np.zeros(self.N)
 
-        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+        V_z = interpolate.interp1d(
+            self.grid - self.schrod_where[0],
+            -q_e * phi,
+            fill_value="extrapolate",
+            kind="quadratic",
+        )  # Shift of grid is needed to match the k.p ham (see solve_k_dot_p())
 
         for k in ks:
             # Find eigenvalues/vectors
@@ -814,10 +838,17 @@ class StackedLayers:
 
             for i in np.arange(len(ev)):
                 fd = fermi_dirac(0, ev[i], self.T)
+
                 ch_dens = interpolate.interp1d(
-                    np.linspace(0, self.L, len(dens(evec[:, i]))),
+                    np.linspace(
+                        self.schrod_where[0],
+                        self.schrod_where[1],
+                        len(dens(evec[:, i])),
+                    ).reshape(-1),
                     dens(evec[:, i]),
-                    fill_value="extrapolate",
+                    fill_value=(0, 0),
+                    bounds_error=False,
+                    kind="quadratic",
                 )
                 n_e += 1 / (2 * math.pi) * ch_dens(self.grid) * fd * k * dk
 
@@ -827,7 +858,7 @@ class StackedLayers:
         rho = -q_e * n_e + self.doping
         return rho
 
-    def optimise_k_dot_p(self):
+    def kp_optimise(self):
         pass
 
     # SETTERS AND GETTERS
@@ -872,6 +903,9 @@ class StackedLayers:
 
     @schrod_where.setter
     def schrod_where(self, bounds):
+        """
+        Specify where to compute the wave functions, bounds are lengths (nm).
+        """
         try:
             x0 = np.argwhere(self.grid >= bounds[0])[0]
         except IndexError:
