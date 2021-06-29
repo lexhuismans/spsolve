@@ -99,8 +99,8 @@ class StackedLayers:
         self.layers = layers  # Layers (tuple)
         self.T = T
         self.N = int(N)
-        self.schrod_start = 0
-        self.schrod_stop = N - 1
+        self._schrod_start = 0
+        self._schrod_stop = N
 
         # PROPERTIES
         (
@@ -158,9 +158,9 @@ class StackedLayers:
         Build a kwant system which is a one dimensional chain.
         This is used for the Hamiltonian and subsequently computing the wavefunctions.
         """
-        N = self.schrod_stop + 1 - self.schrod_start
+        N = self._schrod_stop - self._schrod_start
 
-        m_c = self.m_c[self.schrod_start : self.schrod_stop + 1]
+        m_c = self.m_c[self._schrod_start : self._schrod_stop + 1]
         m_c_full = np.concatenate(([m_c[0]], m_c, [m_c[-1]]))
         m_c_half = np.convolve(m_c_full, [0.5, 0.5], "valid")
         m_c_imh = m_c_half[0:-1]
@@ -263,7 +263,7 @@ class StackedLayers:
         energies : float
             n_modes numpy array with energies of each mode.
         """
-        band = band[self.schrod_start : self.schrod_stop + 1]
+        band = band[self._schrod_start : self._schrod_stop + 1]
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
         diag = np.real(ham.diagonal())
         off_diag = np.real(ham.diagonal(1))
@@ -278,7 +278,7 @@ class StackedLayers:
 
         # Add zeros to modes
         full_waves = np.zeros((self.N, transverse_modes.shape[1]))
-        full_waves[self.schrod_start : self.schrod_stop + 1, :] = transverse_modes
+        full_waves[self._schrod_start : self._schrod_stop + 1, :] = transverse_modes
         return full_waves, energies
 
     def solve_optimize(self, band_init=None):
@@ -719,6 +719,13 @@ class StackedLayers:
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
 
+        plt.plot(momenta, sorted_levels)
+
+        plt.xlim(min(momenta), max(momenta))
+        plt.xlabel("$k_x$")
+        plt.ylabel("Energy (eV)")
+        plt.show()
+
         # Find shift in band minima
         N_sols = len(sorted_levels[0])
         ks = np.array([])
@@ -806,19 +813,19 @@ class StackedLayers:
         sorted_levels = [e]
         m_avg = np.average(self.m_c)
         # Get a few values
-        for k in ks[1:5]:
+        for k in ks[1:10]:
             e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
             Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
             assignment = optimize.linear_sum_assignment(-Q)[1]
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
-
+        print(e2)
         # Fit to polynomial
-        isrelband = np.zeros(N_modes)
+        isrelband = np.zeros(N_modes, dtype=int)
         for i in np.arange(len(sorted_levels)):
             band = [e[i] for e in sorted_levels]
 
-            p, res, _, _, _ = np.polyfit(ks[:5], band, 2, full=True)
+            p, res, _, _, _ = np.polyfit(ks[:10], band, 2, full=True)
             if p[0] > 0 and res < 1e-4:
                 isrelband[i] = 1
 
@@ -826,6 +833,7 @@ class StackedLayers:
         # -INTEGRATE OVER k FOR CHARGE DENSITY-
         # -------------------------------------
         e, psi = eigh_interval(ks[0], sigma)
+        print(isrelband)
         for k in ks:
             e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
             Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
@@ -836,7 +844,12 @@ class StackedLayers:
             # Sum over all modes
             for i in np.arange(len(e2)):
                 fd = fermi_dirac(0, e2[i], self.T)
-                n_e += 1 / (2 * math.pi) * dens(psi2[:, i]) * fd * k * dk
+                ch_dens = interpolate.interp1d(
+                    np.linspace(0, self.L, len(dens(psi[:, i]))),
+                    dens(psi[:, i]),
+                    fill_value="extrapolate",
+                )
+                n_e += 1 / (2 * math.pi) * ch_dens(self.grid) * fd * k * dk
                 if fd < 1e-6:
                     isrelband[i] = 0
 
@@ -900,8 +913,8 @@ class StackedLayers:
         except IndexError:
             x1 = self.N - 1
 
-        self.schrod_start = int(x0)
-        self.schrod_stop = int(x1)
+        self._schrod_start = int(x0)
+        self._schrod_stop = int(x1) + 1
         self.__schrod_where = (self.grid[x0], self.grid[x1])
         self.make_system()
 
