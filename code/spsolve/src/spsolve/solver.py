@@ -538,28 +538,15 @@ class StackedLayers:
 
     def solve_k_dot_p(
         self,
-        sigma=None,
-        band=None,
-        momenta=np.linspace(-0.12, 0.12, 101),
-        savefig=True,
         N_layers="all",
-        N_sols=20,
     ):
         """
         Solve the k.p hamiltonian.
 
         Parameters
         ----------
-        sigma : float
-            energy around where to look for solutions. Energy of first wavefunction.
-        band : np.array(N)
-            energy band
-        momenta : np.array()
-            momenta where to compute k.p
         savefig : boolean
             save the dispersions.
-        N_layers : 'all' or array
-            what layers to use. If array specify what layers.
 
         Returns
         -------
@@ -568,18 +555,13 @@ class StackedLayers:
         sorted_levels : float
             numpy array with array of energies for each momentum k in each entry.
         """
-        if band is None:
-            phi = np.zeros(self.N)
-        else:
-            phi = -(band - self.band_offset) / q_e
 
-        N_grid = 100
         gamma_0 = 1
 
         model = semicon.models.ZincBlende(
             components=("foreman",),
             parameter_coords="z",
-            default_databank="lawaetz",
+            default_databank=None,
         )
 
         parameters = []
@@ -615,33 +597,29 @@ class StackedLayers:
                     ).renormalize(new_gamma_0=gamma_0)
                 )
 
-        grid_spacing = 0.1  # np.sum(widths) / N_grid
+        grid_spacing = 0.5
 
         two_deg_params, walls = semicon.misc.two_deg(
             parameters=parameters,
             widths=widths,
             grid_spacing=grid_spacing,
-            extra_constants=semicon.parameters.constants,
+            extra_constants={
+                "hbar": semicon.parameters.constants["hbar"],
+                "m_0": semicon.parameters.constants["m_0"],
+            },
         )
 
         xpos = np.arange(0, sum(widths), 0.5)
         # Add potential and shift
-        def add_curves(a, b):
+        def add_constant(a, c):
             def compute(x):
-                return a(x) + b(x)
+                return a(x) + c
 
             return compute
 
         y1 = two_deg_params["E_v"](xpos)
         y2 = y1 + two_deg_params["E_0"](xpos)
-        V_z = interpolate.interp1d(
-            self.grid, -q_e * phi - min(y2) + self.CBO, fill_value="extrapolate"
-        )  # Adjust such that it matches optimisation
-        # two_deg_params["E_v"] = add_curves(two_deg_params["E_v"], V_z)
-
-        # What energy to look for modes
-        if sigma is None:
-            sigma = min(y2 + V_z(xpos))
+        two_deg_params["E_v"] = add_constant(two_deg_params["E_v"], -min(y2) + self.CBO)
 
         # Make system
         # semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
@@ -655,25 +633,14 @@ class StackedLayers:
 
         syst = kwant.Builder()
         syst.fill(template, shape, (0,))
+        # ATTACHING LEAD
+        lead = kwant.Builder(kwant.TranslationalSymmetry((-grid_spacing,)))
+        lead.fill(template, shape, (0,))
+        syst.attach_lead(lead)
+        syst.attach_lead(lead.reversed())
         syst = syst.finalized()
 
-        # Find and sort solutions
-        def eigh_interval(k, levels=N_sols):
-            p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
-            ham = syst.hamiltonian_submatrix(params=p, sparse=True)
-            ev, evec = sla.eigsh(ham, k=N_sols, sigma=sigma)
-            ind = np.argsort(abs(ev))[:levels]
-            return ev[ind], evec[:, ind]
-
-        e, psi = eigh_interval(momenta[0])
-        sorted_levels = [e]
-        for x in momenta[1:]:
-            e2, psi2 = eigh_interval(x)
-            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
-            assignment = optimize.linear_sum_assignment(-Q)[1]
-            sorted_levels.append(e2[assignment])
-            psi = psi2[:, assignment]
-
+        """
         if savefig:
             plt.figure(figsize=(12, 8))
 
@@ -692,8 +659,8 @@ class StackedLayers:
                     continue
                 plt.savefig(newname)
                 break
-
-        return momenta, sorted_levels
+        """
+        return syst, two_deg_params
 
     def solve_spin_orbit(self, sigma=None, band=None, N_layers="all"):
         """
@@ -716,9 +683,41 @@ class StackedLayers:
             rashba parameters for all bands below 0 Fermi energy.
         """
 
-        momenta, sorted_levels = self.solve_k_dot_p(
-            sigma=sigma, band=band, N_layers=N_layers
-        )
+        syst, two_deg_params = self.solve_k_dot_p(N_layers=N_layers)
+
+        if band is None:
+            phi = np.zeros(self.N)
+        else:
+            phi = -(band - self.band_offset) / q_e
+
+        momenta = np.linspace(-0.12, 0.12, 101)
+        N_sols = 20
+        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+
+        xpos = np.arange(0, self.L, 0.5)
+        # What energy to look for modes
+        if sigma is None:
+            sigma = min(
+                two_deg_params["E_v"](xpos) + two_deg_params["E_0"](xpos) + V_z(xpos)
+            )
+
+        # Find and sort solutions
+        def eigh_interval(k, sigma, levels=N_sols):
+            p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
+            ham = syst.hamiltonian_submatrix(params=p, sparse=True)
+            ev, evec = sla.eigsh(ham, k=N_sols, sigma=sigma)
+            ind = np.argsort(ev)[:levels]
+            return ev[ind], evec[:, ind]
+
+        e, psi = eigh_interval(momenta[0], sigma)
+        sorted_levels = [e]
+        m_avg = np.average(self.m_c)
+        for x in momenta[1:]:
+            e2, psi2 = eigh_interval(x, sigma + h_bar ** 2 * x ** 2 / (2 * m_avg))
+            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
+            assignment = optimize.linear_sum_assignment(-Q)[1]
+            sorted_levels.append(e2[assignment])
+            psi = psi2[:, assignment]
 
         # Find shift in band minima
         N_sols = len(sorted_levels[0])
@@ -762,6 +761,93 @@ class StackedLayers:
             return np.array([0])
         else:
             return rashbas[:, 0]
+
+    def solve_charge_k_dot_p(self, phi, sigma, N_layers="all"):
+        """
+        Compute the charge distribution integrating over k-space for the
+        electron density using k.p instead of plain Schrodinger.
+
+        Parameters
+        ----------
+        phi : float
+            N numpy array containing the electrostatic potential distribution.
+        sigma : float
+            energy around where to look for solutions. Energy of first wavefunction.
+        N_layers : 'all' or array
+            what layers to use. If array specify what layers.
+
+        Returns
+        -------
+        rho : float
+            N numpy array containing the charge distribution.
+        """
+        syst, two_deg_params = self.solve_k_dot_p(N_layers=N_layers)
+        dens = kwant.operator.Density(syst)
+
+        ks = np.linspace(0, 2, 8000)
+        dk = ks[1]
+        n_e = np.zeros(self.N)
+        N_modes = 21
+
+        V_z = interpolate.interp1d(self.grid, -q_e * phi, fill_value="extrapolate")
+
+        # Find and sort solutions
+        def eigh_interval(k, sigma):
+            p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
+            ham = syst.hamiltonian_submatrix(params=p, sparse=True)
+            ev, evec = sla.eigsh(ham, k=N_modes, sigma=sigma)
+            ind = np.argsort(ev)[:N_modes]
+            return ev[ind], evec[:, ind]
+
+        # -----------------------
+        # -CHECK CONDUCTION BAND-
+        # -----------------------
+        e, psi = eigh_interval(ks[0], sigma)
+        sorted_levels = [e]
+        m_avg = np.average(self.m_c)
+        # Get a few values
+        for k in ks[1:5]:
+            e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
+            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
+            assignment = optimize.linear_sum_assignment(-Q)[1]
+            sorted_levels.append(e2[assignment])
+            psi = psi2[:, assignment]
+
+        # Fit to polynomial
+        isrelband = np.zeros(N_modes)
+        for i in np.arange(len(sorted_levels)):
+            band = [e[i] for e in sorted_levels]
+
+            p, res, _, _, _ = np.polyfit(ks[:5], band, 2, full=True)
+            if p[0] > 0 and res < 1e-4:
+                isrelband[i] = 1
+
+        # -------------------------------------
+        # -INTEGRATE OVER k FOR CHARGE DENSITY-
+        # -------------------------------------
+        e, psi = eigh_interval(ks[0], sigma)
+        for k in ks:
+            e2, psi2 = eigh_interval(k, sigma + h_bar ** 2 * k ** 2 / (2 * m_avg))
+            Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
+            assignment = optimize.linear_sum_assignment(-Q)[1]
+            e2 = e2[assignment][isrelband]
+            psi = psi2[:, assignment][:, isrelband]
+
+            # Sum over all modes
+            for i in np.arange(len(e2)):
+                fd = fermi_dirac(0, e2[i], self.T)
+                n_e += 1 / (2 * math.pi) * dens(psi2[:, i]) * fd * k * dk
+                if fd < 1e-6:
+                    isrelband[i] = 0
+
+            if np.all(isrelband == 0):
+                break
+
+        rho = -q_e * n_e + self.doping
+        return rho
+
+    def optimise_k_dot_p(self):
+        pass
 
     # SETTERS AND GETTERS
     @property
