@@ -366,7 +366,6 @@ class StackedLayers:
             E_k = (h_bar * k) ** 2 / (2 * self.m_c)
             adjusted_band = band + E_k
             psi, energies = self.solve_schrodinger(adjusted_band, n_modes)
-
             inner_product = psi ** 2
             fd = fermi_dirac(0, energies, self.T)
 
@@ -625,7 +624,7 @@ class StackedLayers:
             - self.L_hj[:-1][self.which_layer(self.schrod_where[1])][0]
         )
 
-        grid_spacing = 0.3
+        grid_spacing = 0.5
         print(widths)
         two_deg_params, walls = semicon.misc.two_deg(
             parameters=parameters,
@@ -725,15 +724,11 @@ class StackedLayers:
             # Find eigenvalues/vectors
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
             ham = syst.hamiltonian_submatrix(params=p, sparse=False)
-            ev, evec = la.eigh(ham)
-            start = int(ham.shape[0] / 4 * 3)
-            ev = ev[start:]
-            evec = evec[:, start:]
+            n = ham.shape[0]
+            ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
             return ev, evec
 
         e, psi = eigh_interval(momenta[0])
-        print(e)
-        print(len(e))
         sorted_levels = [e]
         for x in tqdm.tqdm(momenta[1:]):
             e2, psi2 = eigh_interval(x)
@@ -741,6 +736,7 @@ class StackedLayers:
             assignment = optimize.linear_sum_assignment(-Q)[1]
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
+
         plt.plot(momenta, sorted_levels)
 
         plt.xlim(min(momenta), max(momenta))
@@ -750,9 +746,7 @@ class StackedLayers:
 
         # Find shift in band minima
         N_sols = len(sorted_levels[0])
-        ks = np.array([])
         es = np.array([])
-        cbands = np.array([])
         rashbas = np.array([])
         for i in np.arange(0, N_sols):
             cband = interpolate.interp1d(
@@ -763,25 +757,20 @@ class StackedLayers:
             )
 
             # Check conduction band
-            p, res, _, _, _ = np.polyfit(momenta, cband(momenta), 2, full=True)
-            if p[0] < 0 or res > 1e-4:
-                continue
+            p, _, _, _, _ = np.polyfit(momenta, cband(momenta), 2, full=True)
 
             # Find minima
             x = -p[1] / (2 * p[0])
 
             # Break if above Fermi energy
-            if cband(x) > 3:
+            if cband(x) > 0:
                 continue
             else:
-                ks = np.append(ks, p[2])
                 es = np.append(es, cband(x))
                 rashba = abs((cband(0.00001) - cband(-0.00001)) / 0.00002)
                 rashbas = np.append(rashbas, rashba)
-                cbands = np.append(cbands, cband)
 
         argsort = np.argsort(es)
-        ks = ks[argsort].reshape(-1, 2)
         es = es[argsort].reshape(-1, 2)
         rashbas = rashbas[argsort].reshape(-1, 2)
         if len(rashbas) == 0:
@@ -967,6 +956,7 @@ class StackedLayers:
             fill_value="extrapolate",
             kind="quadratic",
         )  # Shift of grid is needed to match the k.p ham (see kp_make_system())
+
         p = {"k_x": 0, "k_y": 0, "V": V_z, **two_deg_params}
         ham = syst.hamiltonian_submatrix(params=p, sparse=False)
         n = ham.shape[0]
