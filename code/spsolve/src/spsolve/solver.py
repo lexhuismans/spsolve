@@ -3,6 +3,7 @@ from collections import namedtuple
 
 import numpy as np
 import tqdm
+import matplotlib.pyplot as plt
 
 import kwant
 import scipy.linalg as la
@@ -21,6 +22,7 @@ h_bar = database.h_bar
 q_e = database.q_e  # elementary charge
 
 Material = namedtuple("Material", ["material", "L", "x", "doping"], defaults=[0, 0])
+
 
 """
 TO DO
@@ -550,9 +552,19 @@ class StackedLayers:
         # get dispersions
         N_k = 50
         k = np.linspace(-np.pi / a, np.pi / a, N_k * 2 + 1)
-        # e = np.array([la.eigvalsh(continuum(k_x=ki, k_y=0, k_z=0)) for ki in k])
         e_tb = np.array([la.eigvalsh(tb(k_x=a * ki, k_y=0, k_z=0)) for ki in k])
+        """
+        # define continuum dispersion function
+        continuum = kwant.continuum.lambdify(str(model.hamiltonian), locals=params)
+        e = np.array([la.eigvalsh(continuum(k_x=ki, k_y=0, k_z=0)) for ki in k])
 
+        plt.plot(k, e_tb, 'k-')
+        plt.plot(k, e, 'r-')
+        plt.title(mat)
+        plt.ylim(-1, 2)
+        plt.grid()
+        plt.show()
+        """
         gap_low = e_tb[:, 5][N_k]
         for i in np.arange(e_tb.shape[1] - 2):
             if max(e_tb[:, i]) > gap_low:
@@ -631,7 +643,7 @@ class StackedLayers:
             - self.L_hj[:-1][self.which_layer(self.schrod_where[1])][0]
         )
 
-        grid_spacing = 0.4
+        grid_spacing = 0.5
 
         two_deg_params, walls = semicon.misc.two_deg(
             parameters=parameters,
@@ -657,7 +669,7 @@ class StackedLayers:
         two_deg_params["E_v"] = add_constant(two_deg_params["E_v"], -min(y2) + self.CBO)
 
         # Make system
-        # semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
+        semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
         template = kwant.continuum.discretize(
             model.hamiltonian + sympy.diag(*[" + V(z)"] * 8),
             coords="z",
@@ -674,6 +686,7 @@ class StackedLayers:
         lead.fill(template, shape, (0,))
         syst.attach_lead(lead)
         syst.attach_lead(lead.reversed())
+
         syst = syst.finalized()
 
         return syst, two_deg_params
