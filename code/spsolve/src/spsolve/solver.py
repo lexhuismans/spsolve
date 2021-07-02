@@ -1,10 +1,6 @@
 import math
-import os
-import time
-import warnings
 from collections import namedtuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
 
@@ -150,9 +146,11 @@ class StackedLayers:
         Parameters:
         -----------
         bound_left : tuple
-            2D tuple of shape (boolean, float) for left/first boundary. True for Dirichlet, False for Neumann.
+            2D tuple of shape (boolean, float) for left/first boundary.
+            True for Dirichlet, False for Neumann.
         bound_right : tuple
-            2D tuple of shape (boolean, float) for right/last boundary. True for Dirichlet, False for Neumann.
+            2D tuple of shape (boolean, float) for right/last boundary.
+            True for Dirichlet, False for Neumann.
         """
         epsilon_full = np.concatenate(
             ([self.epsilon[0]], self.epsilon, [self.epsilon[-1]])
@@ -437,19 +435,22 @@ class StackedLayers:
 
     def solve_snider(self, band_init=None):
         """
-        Optimize as is described in the Snider paper. This is a predictor-corrector style approach.
+        Optimize as is described in the Snider paper.
+        This is a predictor-corrector style approach.
 
         Parameters
         ----------
-        band_init : None/float
-            None sets electrostatic potential to zero. N numpy array with band structure (including band offsets)
+        band_init : float, optional
+            None sets electrostatic potential to zero.
+            N numpy array with band structure (including band offsets)
 
         Returns
         -------
         band : float
             N numpy array containing the conduction band.
         psi : float
-            N x 21 numpy array containing the lowest energy wave functions in each column (psi[:,i]).
+            N x 21 numpy array containing the lowest energy wave
+            functions in each column (psi[:,i]).
         energies : float
             21 numpy array containing the energies of the wavefunctions.
         rho : float
@@ -534,18 +535,22 @@ class StackedLayers:
                 databank=dat,
             )
         # define continuum dispersion function
-        continuum = kwant.continuum.lambdify(str(model.hamiltonian), locals=params)
+        # continuum = kwant.continuum.lambdify(str(model.hamiltonian), locals=params)
 
         # define tight-binding dispersion function
         template = kwant.continuum.discretize(model.hamiltonian, grid=a)
         syst = kwant.wraparound.wraparound(template).finalized()
-        p = lambda k_x, k_y, k_z: {"k_x": k_x, "k_y": k_y, "k_z": k_z, **params}
-        tb = lambda k_x, k_y, k_z: syst.hamiltonian_submatrix(params=p(k_x, k_y, k_z))
+
+        def p(k_x, k_y, k_z):
+            return {"k_x": k_x, "k_y": k_y, "k_z": k_z, **params}
+
+        def tb(k_x, k_y, k_z):
+            return syst.hamiltonian_submatrix(params=p(k_x, k_y, k_z))
 
         # get dispersions
         N_k = 50
         k = np.linspace(-np.pi / a, np.pi / a, N_k * 2 + 1)
-        e = np.array([la.eigvalsh(continuum(k_x=ki, k_y=0, k_z=0)) for ki in k])
+        # e = np.array([la.eigvalsh(continuum(k_x=ki, k_y=0, k_z=0)) for ki in k])
         e_tb = np.array([la.eigvalsh(tb(k_x=a * ki, k_y=0, k_z=0)) for ki in k])
 
         gap_low = e_tb[:, 5][N_k]
@@ -566,7 +571,8 @@ class StackedLayers:
         Returns
         -------
         momenta : float
-            numpy array containing the momenta over which energies/dispersion are/is computed.
+            numpy array containing the momenta over which energies/dispersion are/is
+            computed.
         sorted_levels : float
             numpy array with array of energies for each momentum k in each entry.
         """
@@ -592,7 +598,8 @@ class StackedLayers:
             databank = database.get_dict(material, layer.x)
 
             if databank is False:
-                continue
+                print("Material {} not found".format(material))
+                raise AssertionError
 
             widths.append(layer.L)
             if self.check_spurious(material, databank):
@@ -624,8 +631,8 @@ class StackedLayers:
             - self.L_hj[:-1][self.which_layer(self.schrod_where[1])][0]
         )
 
-        grid_spacing = 0.5
-        print(widths)
+        grid_spacing = 0.4
+
         two_deg_params, walls = semicon.misc.two_deg(
             parameters=parameters,
             widths=widths,
@@ -637,6 +644,7 @@ class StackedLayers:
         )
 
         xpos = np.arange(0, sum(widths), 0.5)
+
         # Add potential and shift
         def add_constant(a, c):
             def compute(x):
@@ -656,7 +664,8 @@ class StackedLayers:
             grid=grid_spacing,
         )
 
-        shape = lambda site: 0 - grid_spacing / 2 < site.pos[0] < sum(widths)
+        def shape(site):
+            return 0 - grid_spacing / 2 < site.pos[0] < sum(widths)
 
         syst = kwant.Builder()
         syst.fill(template, shape, (0,))
@@ -667,44 +676,30 @@ class StackedLayers:
         syst.attach_lead(lead.reversed())
         syst = syst.finalized()
 
-        """
-        if savefig:
-            plt.figure(figsize=(12, 8))
-
-            plt.plot(momenta, sorted_levels)
-
-            plt.xlim(min(momenta), max(momenta))
-            plt.xlabel("$k_x$")
-            plt.ylabel("Energy (eV)")
-
-            filename = "figures/dispersion/"
-            i = 0
-            while True:
-                i += 1
-                newname = "{}{:d}.png".format(filename, i)
-                if os.path.exists(newname):
-                    continue
-                plt.savefig(newname)
-                break
-        """
         return syst, two_deg_params
 
-    def solve_spin_orbit(self, band=None):
+    def get_dispersion(
+        self, band=None, momenta=np.linspace(-0.12, 0.12, 101), where=None
+    ):
         """
-        Solve k.p using semicon (kp_make_system()) and from this band structure
-        extract the shift in k.
+        Get the energy at each momentum k in the k.p model and sort them.
 
         Parameters
         ----------
-        energy : float
-            energy around where to look for solutions in k.p (energy of first wave function)
-        band : array (float)
-            array with conduction band energy. Default is None.
+        band : float, optional
+            N numpy array with conduction band.
+        momenta : float, optional
+            For what momenta to compute the energies.
+        where : float, optional
+            from what fraction (upward) to compute the eigenvalues, default is only
+            conduction band.
 
         Returns
         -------
-        rashba : numpy array
-            rashba parameters for all bands below 0 Fermi energy.
+        momenta : float
+            For what momenta the eigenenergies are computed.
+        sorted_levels : float
+            Energy levels for each momentum.
         """
         syst, two_deg_params = self.kp_make_system()
 
@@ -713,8 +708,6 @@ class StackedLayers:
         else:
             phi = -(band - self.band_offset) / q_e
 
-        momenta = np.linspace(-0.12, 0.12, 101)
-        N_sols = 20
         V_z = interpolate.interp1d(
             self.grid - self.schrod_where[0], -q_e * phi, fill_value="extrapolate"
         )  # Shift of grid is needed to match the k.p ham (see kp_make_system())
@@ -725,7 +718,10 @@ class StackedLayers:
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
             ham = syst.hamiltonian_submatrix(params=p, sparse=False)
             n = ham.shape[0]
-            ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
+            if where is None:
+                ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
+            else:
+                ev, evec = la.eigh(ham, subset_by_index=[int(n * where), n - 1])
             return ev, evec
 
         e, psi = eigh_interval(momenta[0])
@@ -737,12 +733,24 @@ class StackedLayers:
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
 
-        plt.plot(momenta, sorted_levels)
+        return momenta, sorted_levels
 
-        plt.xlim(min(momenta), max(momenta))
-        plt.xlabel("$k_x$")
-        plt.ylabel("Energy (eV)")
-        plt.show()
+    def solve_spin_orbit(self, band=None):
+        """
+        Solve k.p using semicon (kp_make_system()) and from this band structure
+        extract the shift in k.
+
+        Parameters
+        ----------
+        band : array (float)
+            array with conduction band energy. Default is None.
+
+        Returns
+        -------
+        rashba : numpy array
+            rashba parameters for all bands below 0 Fermi energy.
+        """
+        momenta, sorted_levels = self.get_dispersion(band=band)
 
         # Find shift in band minima
         N_sols = len(sorted_levels[0])
@@ -928,7 +936,7 @@ class StackedLayers:
         error_prev = 10000
         syst, two_deg_params = self.kp_make_system()
         print("Optimise:")
-        """
+
         while True:
             rho = self.kp_solve_charge(phi, syst_param=(syst, two_deg_params))
             trial_error = self.pois_matrix.dot(phi) - adjust_rho(rho)
@@ -947,12 +955,17 @@ class StackedLayers:
             delta_phi = np.linalg.solve(matrix, trial_error)
 
             phi = delta_phi + phi
-        """
+
         band = -q_e * phi + self.band_offset
         # Find eigenvalues/vectors
+        schrod_phi = phi[self._schrod_start : self._schrod_stop]
         V_z = interpolate.interp1d(
-            self.grid - self.schrod_where[0],
-            -q_e * phi,
+            np.linspace(
+                0, self.schrod_where[1] - self.schrod_where[0], len(schrod_phi)
+            ).reshape(
+                -1,
+            ),
+            -q_e * schrod_phi,
             fill_value="extrapolate",
             kind="quadratic",
         )  # Shift of grid is needed to match the k.p ham (see kp_make_system())
@@ -962,7 +975,7 @@ class StackedLayers:
         n = ham.shape[0]
         energies, psi = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
 
-        dens = kwant.operator.Density(syst)
+        dens = kwant.operator.Density(syst, onsite=np.diag([1, 1, 0, 0, 0, 0, 0, 0]))
         modes = np.zeros((self.N, len(energies)))
         for i in np.arange(len(energies)):
             wv_dens = interpolate.interp1d(
