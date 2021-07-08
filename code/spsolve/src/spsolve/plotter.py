@@ -64,13 +64,13 @@ def plot_band(grid, band, ax=None, **options):
         return ax
 
 
-def plot_wave(grid, psi, energies, ax=None, n_waves=3, **options):
+def plot_wave(grid, psi, energies, ax=None, n_waves=4, **options):
     if ax is None:
         fig, ax = plt.subplots(1)
 
-    ax.plot(grid, psi[:, 0] ** 2, label="$E_0$ = {:f} eV".format(energies[0]))
+    ax.plot(grid, psi[:, 0]**2, label="$E_0$ = {:f} eV".format(energies[0]))
     for n in np.arange(n_waves - 1) + 1:
-        ax.plot(grid, psi[:, n] ** 2, label="$E_{}$ = {:f} eV".format(n, energies[n]))
+        ax.plot(grid, psi[:, n]**2, label="$E_{}$ = {:f} eV".format(n + 1, energies[n]))
 
     if ax is None:
         _set_axis(ax, "Position (nm)", r"$|\psi|^2 (1/nm)$")
