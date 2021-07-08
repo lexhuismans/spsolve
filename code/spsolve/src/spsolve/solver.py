@@ -519,7 +519,7 @@ class StackedLayers:
         Check if there are spurious solutions in the bulk of the material.
         Used to deduce wether to renormalize the effective mass in k.p or not.
         """
-        a = 0.1
+        a = 0.5
         gamma_0 = 1
 
         model = semicon.models.ZincBlende(
@@ -565,6 +565,7 @@ class StackedLayers:
         plt.grid()
         plt.show()
         """
+
         gap_low = e_tb[:, 5][N_k]
         for i in np.arange(e_tb.shape[1] - 2):
             if max(e_tb[:, i]) > gap_low:
@@ -608,7 +609,7 @@ class StackedLayers:
         for layer in layers:
             material = layer.material
             databank = database.get_dict(material, layer.x)
-
+            # print(databank)
             if databank is False:
                 print("Material {} not found".format(material))
                 raise AssertionError
@@ -669,7 +670,7 @@ class StackedLayers:
         two_deg_params["E_v"] = add_constant(two_deg_params["E_v"], -min(y2) + self.CBO)
 
         # Make system
-        semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
+        # semicon.misc.plot_2deg_bandedges(two_deg_params, xpos, walls, show_fig=True)
         template = kwant.continuum.discretize(
             model.hamiltonian + sympy.diag(*[" + V(z)"] * 8),
             coords="z",
@@ -692,7 +693,7 @@ class StackedLayers:
         return syst, two_deg_params
 
     def get_dispersion(
-        self, band=None, momenta=np.linspace(-0.12, 0.12, 101), where=None
+        self, band=None, momenta=np.linspace(-0.12, 0.12, 51), where=None
     ):
         """
         Get the energy at each momentum k in the k.p model and sort them.
@@ -703,9 +704,9 @@ class StackedLayers:
             N numpy array with conduction band.
         momenta : float, optional
             For what momenta to compute the energies.
-        where : float, optional
-            from what fraction (upward) to compute the eigenvalues, default is only
-            conduction band.
+        where : tuple, optional
+            from what fraction (lower, upper) to compute the eigenvalues, default is
+            only conduction band.
 
         Returns
         -------
@@ -722,7 +723,10 @@ class StackedLayers:
             phi = -(band - self.band_offset) / q_e
 
         V_z = interpolate.interp1d(
-            self.grid - self.schrod_where[0], -q_e * phi, fill_value="extrapolate"
+            self.grid - self.schrod_where[0],
+            -q_e * phi,
+            fill_value="extrapolate",
+            kind="quadratic",
         )  # Shift of grid is needed to match the k.p ham (see kp_make_system())
 
         # Find and sort solutions
@@ -732,20 +736,29 @@ class StackedLayers:
             ham = syst.hamiltonian_submatrix(params=p, sparse=False)
             n = ham.shape[0]
             if where is None:
-                ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
+                # Only conduction bands (could be that sometimes n / 4 * 3 - 2 is needed)
+                ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3 - 2, n - 1])
             else:
-                ev, evec = la.eigh(ham, subset_by_index=[int(n * where), n - 1])
+                ev, evec = la.eigh(
+                    ham, subset_by_index=[int(n * where[0]), int(n * where[1]) - 1]
+                )
             return ev, evec
 
         e, psi = eigh_interval(momenta[0])
         sorted_levels = [e]
-        for x in tqdm.tqdm(momenta[1:]):
+        for x in momenta[1:]:
             e2, psi2 = eigh_interval(x)
             Q = np.abs(psi.T.conj() @ psi2)  # Overlap matrix
             assignment = optimize.linear_sum_assignment(-Q)[1]
             sorted_levels.append(e2[assignment])
             psi = psi2[:, assignment]
-
+        """
+        plt.plot(momenta, sorted_levels)
+        plt.xlim(min(momenta), max(momenta))
+        plt.xlabel("$k_x$")
+        plt.ylabel("Energy (eV)")
+        plt.show()
+        """
         return momenta, sorted_levels
 
     def solve_spin_orbit(self, band=None):
@@ -763,7 +776,9 @@ class StackedLayers:
         rashba : numpy array
             rashba parameters for all bands below 0 Fermi energy.
         """
-        momenta, sorted_levels = self.get_dispersion(band=band)
+        momenta, sorted_levels = self.get_dispersion(
+            band=band, momenta=np.linspace(-0.08, 0.08, 10)
+        )
 
         # Find shift in band minima
         N_sols = len(sorted_levels[0])
@@ -778,10 +793,14 @@ class StackedLayers:
             )
 
             # Check conduction band
-            p, _, _, _, _ = np.polyfit(momenta, cband(momenta), 2, full=True)
+            p = np.polyfit(momenta, cband(momenta), 2)
 
             # Find minima
             x = -p[1] / (2 * p[0])
+
+            # Break if ax^2 -> a < 0 (Valence band)
+            if p[0] < 0:
+                continue
 
             # Break if above Fermi energy
             if cband(x) > 0:
@@ -790,7 +809,7 @@ class StackedLayers:
                 es = np.append(es, cband(x))
                 rashba = abs((cband(0.00001) - cband(-0.00001)) / 0.00002)
                 rashbas = np.append(rashbas, rashba)
-
+        print(rashbas)
         argsort = np.argsort(es)
         es = es[argsort].reshape(-1, 2)
         rashbas = rashbas[argsort].reshape(-1, 2)
@@ -843,6 +862,7 @@ class StackedLayers:
             p = {"k_x": k, "k_y": 0, "V": V_z, **two_deg_params}
             ham = syst.hamiltonian_submatrix(params=p, sparse=False)
             n = ham.shape[0]
+            # Only conduction bands (could be that sometimes n / 4 * 3 - 2 is needed)
             ev, evec = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
 
             # Sum over all modes
@@ -850,7 +870,6 @@ class StackedLayers:
                 fermi_dirac(0, ev[0], self.T) < 1e-6 and ev[0] > 0.03
             ):  # Break when all modes above E_F
                 break
-            print("Eigenvalue: ", ev[0])
             for i in np.arange(len(ev)):
                 fd = fermi_dirac(0, ev[i], self.T)
 
@@ -948,7 +967,6 @@ class StackedLayers:
 
         error_prev = 10000
         syst, two_deg_params = self.kp_make_system()
-        print("Optimise:")
 
         while True:
             rho = self.kp_solve_charge(phi, syst_param=(syst, two_deg_params))
@@ -961,7 +979,7 @@ class StackedLayers:
                 print("Oscilations :(")
 
             error_prev = np.sum(np.abs(error))
-            print(error_prev)
+            print("Error: ", error_prev)
             matrix = -self.pois_matrix + self.kp_matrix_delta_charge(
                 phi, syst, two_deg_params
             )
@@ -971,14 +989,9 @@ class StackedLayers:
 
         band = -q_e * phi + self.band_offset
         # Find eigenvalues/vectors
-        schrod_phi = phi[self._schrod_start : self._schrod_stop]
         V_z = interpolate.interp1d(
-            np.linspace(
-                0, self.schrod_where[1] - self.schrod_where[0], len(schrod_phi)
-            ).reshape(
-                -1,
-            ),
-            -q_e * schrod_phi,
+            self.grid - self.schrod_where[0],
+            -q_e * phi,
             fill_value="extrapolate",
             kind="quadratic",
         )  # Shift of grid is needed to match the k.p ham (see kp_make_system())
@@ -988,7 +1001,8 @@ class StackedLayers:
         n = ham.shape[0]
         energies, psi = la.eigh(ham, subset_by_index=[n / 4 * 3, n - 1])
 
-        dens = kwant.operator.Density(syst, onsite=np.diag([1, 1, 0, 0, 0, 0, 0, 0]))
+        # dens = kwant.operator.Density(syst, onsite=np.diag([1, 1, 0, 0, 0, 0, 0, 0]))  # s-orbital
+        dens = kwant.operator.Density(syst)
         modes = np.zeros((self.N, len(energies)))
         for i in np.arange(len(energies)):
             wv_dens = interpolate.interp1d(
@@ -1003,8 +1017,14 @@ class StackedLayers:
                 kind="quadratic",
             )
             modes[:, i] = wv_dens(self.grid)
+            # Normalize
+            modes[:, i] = modes[:, i] / (
+                math.sqrt(self.dl) * math.sqrt(np.sum(modes[:, i] ** 2))
+            )
 
-        return band, modes, energies, np.zeros(self.N)
+        rho = self.kp_solve_charge(phi, syst_param=(syst, two_deg_params))
+
+        return band, modes, energies, rho
 
     # SETTERS AND GETTERS
     @property
