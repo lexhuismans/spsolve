@@ -18,7 +18,7 @@ def get_dict(material, x=0):
     elif material in alloyproperty:
         properties = scproperty[alloyproperty[material]["material1"]].keys()
     else:
-        return False
+        raise ValueError("Material not found :( please add to database")
 
     for property in properties:
         params[property] = _get_property(property, material, x)
@@ -69,7 +69,7 @@ def _get_property(property, material, x=0):
     elif material in dielectricproperty:
         return dielectricproperty[material][property]
     else:
-        raise print("Material not found :(")
+        raise ValueError("Material not found :( please add to database")
 
 
 # MATERIAL PROPERTIES
@@ -102,6 +102,20 @@ scproperty = {
         "epsilonStatic": 13.10,  # dielectric constant
         "E_0": 1.36,  # (eV) Fundamental energy gap
         "VBO": -0.80,  # (eV)
+    },
+    "dummy3": {
+        "m_c": 0.0135,
+        "epsilonStatic": 16.8,
+        "E_0": 100,
+        "VBO": -30,
+        "Delta_0": 0.81,
+        "P": 0.9641,
+        "g_c": -51.56,
+        "gamma_1": 34.8,
+        "gamma_2": 15.5,
+        "gamma_3": 16.5,
+        "kappa": 15.6,
+        "q": 0.39,
     },
     "GaAs": {
         "m_c": 0.067,
@@ -136,44 +150,44 @@ scproperty = {
         "VBO": -1.33,
     },
     "InAs": {
-        "m_c": 0.026,
+        "m_c": 0.027,
         "epsilonStatic": 15.15,
         "E_0": 0.417,
         "VBO": -0.59,
         "Delta_0": 0.39,
         "P": 0.9197,
         "g_c": -14.8,
-        "gamma_1": 20,
-        "gamma_2": 8.5,
-        "gamma_3": 9.2,
-        "kappa": 7.68,
-        "q": 0.4,
+        "gamma_1": 20.4,
+        "gamma_2": 8.3,
+        "gamma_3": 9.1,
+        "kappa": 7.6,
+        "q": 0.39,
     },
     "AlSb": {
         "m_c": 0.14,
         "epsilonStatic": 10.9,
         "E_0": 2.386,
         "VBO": -0.41,
-        "Delta_0": 0.676,
+        "Delta_0": 0.673,
         "P": 0.8441,
-        "g_c": 0.52,
-        "gamma_1": 5.18,
-        "gamma_2": 1.19,
-        "gamma_3": 1.97,
+        "g_c": 0.843,
+        "gamma_1": 4.15,
+        "gamma_2": 1.01,
+        "gamma_3": 1.71,
         "kappa": 0.31,
         "q": 0.07,
     },
     "InSb": {
-        "m_c": 0.0135,
+        "m_c": 0.018,
         "epsilonStatic": 16.8,
         "E_0": 0.235,
         "VBO": 0,
         "Delta_0": 0.81,
         "P": 0.9641,
         "g_c": -51.56,
-        "gamma_1": 34.8,
-        "gamma_2": 15.5,
-        "gamma_3": 16.5,
+        "gamma_1": 37.2,
+        "gamma_2": 16.5,
+        "gamma_3": 17.7,
         "kappa": 15.6,
         "q": 0.39,
     },
@@ -195,7 +209,7 @@ alloyproperty = {
     "InSbAs": {
         "material1": "InAs",
         "material2": "InSb",
-        "E_0": 0.938,
+        "E_0": 0.67,
         "m_c": 0.035,
         "VBO": -0.38,
     },
