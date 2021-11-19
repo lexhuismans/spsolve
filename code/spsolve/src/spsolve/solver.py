@@ -266,7 +266,7 @@ class StackedLayers:
         # band = -q_e * phi + self.band_offset + self.CBO
         return phi
 
-    def solve_schrodinger(self, band, n_modes=21):
+    def solve_schrodinger(self, band=None, n_modes=21):
         """
         Gives the wavefunctions for a given band structure.
 
@@ -284,6 +284,9 @@ class StackedLayers:
         energies : float
             n_modes numpy array with energies of each mode.
         """
+        if band is None:
+            band = self.band_offset
+
         band = band[self._schrod_start : self._schrod_stop + 1]
         ham = self.syst.hamiltonian_submatrix(sparse=False, params=dict(pot=band))
         diag = np.real(ham.diagonal())
